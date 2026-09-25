@@ -107,8 +107,6 @@ import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-private const val TAP_HINT_DURATION_MS = 1_200L
-
 internal class ScreenLookupOverlayController(
     private val context: Context,
     private val windowManager: WindowManager,
@@ -320,7 +318,6 @@ internal fun ScreenLookupOverlay(
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var selection by remember { mutableStateOf<OcrSelection?>(null) }
-    var showTapHint by remember { mutableStateOf(false) }
     var lookupNonce by remember { mutableIntStateOf(0) }
 
     SideEffect {
@@ -340,7 +337,6 @@ internal fun ScreenLookupOverlay(
         isLoading = true
         error = null
         blocks = emptyList()
-        showTapHint = false
         val language = OcrLanguage.entries.find {
             it.bcp47.equals(activeProfile.languageCode, ignoreCase = true)
         } ?: OcrLanguage.JAPANESE
@@ -355,18 +351,11 @@ internal fun ScreenLookupOverlay(
             blocks = it
             if (it.isEmpty()) {
                 error = context.contextStringResource(MR.strings.screen_lookup_no_text)
-            } else {
-                showTapHint = true
             }
         }.onFailure {
             error = it.message ?: context.contextStringResource(MR.strings.screen_lookup_capture_failed)
         }
         isLoading = false
-
-        if (showTapHint) {
-            delay(TAP_HINT_DURATION_MS)
-            showTapHint = false
-        }
     }
 
     BoxWithConstraints(
@@ -466,14 +455,12 @@ internal fun ScreenLookupOverlay(
                 val text = tapped.fullText
                 if (selection?.block == tapped && selection?.sentenceOffset == charOffset) {
                     selection = null
-                    showTapHint = false
                     matchedCharCount = 0
                     matchOffset = 0
                 } else if (charOffset in text.indices && isLookupStartChar(text[charOffset])) {
                     val lookupString = extractOcrLookupString(text, charOffset)
                     if (lookupString.isNotBlank()) {
                         lookupNonce++
-                        showTapHint = false
                         matchedCharCount = 0
                         matchOffset = 0
                         selection = OcrSelection(
@@ -488,16 +475,13 @@ internal fun ScreenLookupOverlay(
                         )
                     } else {
                         selection = null
-                        showTapHint = false
                     }
                 } else {
                     selection = null
-                    showTapHint = false
                 }
             },
             onEmptyTap = {
                 selection = null
-                showTapHint = false
             },
         )
 
@@ -506,14 +490,6 @@ internal fun ScreenLookupOverlay(
             error = error,
             loadingText = stringResource(MR.strings.screen_lookup_finding_text),
             modifier = Modifier.align(Alignment.Center),
-        )
-
-        OcrTapHint(
-            visible = showTapHint && blocks.isNotEmpty() && selection == null,
-            hintText = stringResource(MR.strings.screen_lookup_tap_text),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 84.dp),
         )
 
         val selected = selection
