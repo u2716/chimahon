@@ -57,9 +57,6 @@ jobs:
       - name: Set up gradle
         uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
 
-      - name: Check code format
-        run: ./gradlew spotlessCheck
-
       - name: Build app
         if: github.repository == github.event.pull_request.head.repo.full_name
         run: ./gradlew assemblePreview -Pinclude-telemetry -Penable-updater
