@@ -21,7 +21,7 @@ android {
     namespace = "eu.kanade.tachiyomi"
 
     defaultConfig {
-        applicationId = "app.chimahon"
+        applicationId = "app.chimahonplus"
 
         versionCode = releaseVersionCode ?: 3
         versionName = releaseVersionName ?: "1.1.0"
