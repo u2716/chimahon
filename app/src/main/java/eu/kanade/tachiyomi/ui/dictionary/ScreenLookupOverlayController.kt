@@ -123,6 +123,7 @@ internal class ScreenLookupOverlayController(
     private var overlayBackCallback: Any? = null
     private val lookupWarmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var lookupWarmupJob: Job? = null
+    private var lastBarOffset: Offset = Offset.Zero
 
     val isShowing: Boolean
         get() = overlayView != null
@@ -170,6 +171,8 @@ internal class ScreenLookupOverlayController(
                     screenshot = nextScreenshot,
                     webView = webView,
                     activeProfile = profile,
+                    initialBarOffset = lastBarOffset,
+                    onBarOffsetChanged = { lastBarOffset = it },
                     onClose = { dismiss() },
                     onBack = { overlayBackHandler = it },
                 )
@@ -223,6 +226,7 @@ internal class ScreenLookupOverlayController(
         cachedWebView?.runCatching { destroy() }
         cachedWebView = null
         cachedProfile = null
+        lastBarOffset = Offset.Zero
     }
 
     private fun handleBack() {
@@ -289,6 +293,8 @@ internal fun ScreenLookupOverlay(
     screenshot: Bitmap,
     webView: WebView,
     activeProfile: chimahon.anki.AnkiProfile,
+    initialBarOffset: Offset = Offset.Zero,
+    onBarOffsetChanged: (Offset) -> Unit = {},
     onClose: () -> Unit,
     onBack: ((() -> Boolean) -> Unit)? = null,
     type: String = "screen",
@@ -305,7 +311,7 @@ internal fun ScreenLookupOverlay(
 
     val ocrEnginePref = remember { dictionaryPreferences.ocrEngine() }
     val ocrEngine by ocrEnginePref.collectAsState()
-    var barOffset by remember { mutableStateOf(Offset.Zero) }
+    var barOffset by remember { mutableStateOf(initialBarOffset) }
     var isDropdownOpen by remember { mutableStateOf(false) }
 
     var matchedCharCount by remember { mutableIntStateOf(0) }
@@ -370,6 +376,21 @@ internal fun ScreenLookupOverlay(
         val widthPx = with(localDensity) { maxWidth.toPx() }
         val heightPx = with(localDensity) { maxHeight.toPx() }
 
+        LaunchedEffect(widthPx, heightPx) {
+            val minX = -(widthPx - with(localDensity) { 90.dp.toPx() })
+            val maxX = with(localDensity) { 12.dp.toPx() }
+            val minY = with(localDensity) { -16.dp.toPx() }
+            val maxY = heightPx - with(localDensity) { 80.dp.toPx() }
+            val clamped = Offset(
+                x = barOffset.x.coerceIn(minX, maxX),
+                y = barOffset.y.coerceIn(minY, maxY),
+            )
+            if (clamped != barOffset) {
+                barOffset = clamped
+                onBarOffsetChanged(clamped)
+            }
+        }
+
         if (isDropdownOpen) {
             Box(
                 modifier = Modifier
@@ -418,10 +439,12 @@ internal fun ScreenLookupOverlay(
                 val maxX = with(localDensity) { 12.dp.toPx() }
                 val minY = with(localDensity) { -16.dp.toPx() }
                 val maxY = heightPx - with(localDensity) { 80.dp.toPx() }
-                barOffset = Offset(
+                val updated = Offset(
                     x = newX.coerceIn(minX, maxX),
                     y = newY.coerceIn(minY, maxY),
                 )
+                barOffset = updated
+                onBarOffsetChanged(updated)
             },
             modifier = Modifier
                 .align(Alignment.TopEnd)
