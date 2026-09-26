@@ -47,7 +47,7 @@ fun OcrBlockCanvas(
     activeMatchCount: Int,
     activeMatchOffset: Int,
     selection: OcrSelection?,
-    onBlockTapped: (OcrTextBlock, Float, Float) -> Unit,
+    onBlockTapped: (OcrTextBlock, Float, Float, Int?) -> Unit,
     onEmptyTap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -56,20 +56,46 @@ fun OcrBlockCanvas(
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(blocks) {
+            .pointerInput(blocks, boxScaleX, boxScaleY) {
                 detectTapGestures { offset ->
-                    val tapped = blocks.firstOrNull { block ->
-                        offset.x >= block.xmin * size.width &&
-                            offset.x <= block.xmax * size.width &&
-                            offset.y >= block.ymin * size.height &&
-                            offset.y <= block.ymax * size.height
-                    }
-                    if (tapped == null) {
+                    val tappedMatch = blocks
+                        .flatMap { block ->
+                            val geometries = block.lineGeometries
+                            if (geometries != null && geometries.size == block.lines.size) {
+                                geometries.mapIndexed { lineIndex, geo -> Triple(block, lineIndex, geo) }
+                            } else {
+                                listOf(Triple(block, -1, null))
+                            }
+                        }
+                        .filter { (block, _, geo) ->
+                            if (geo != null) {
+                                val cx = (geo.xmin + geo.xmax) / 2f
+                                val cy = (geo.ymin + geo.ymax) / 2f
+                                val sw = (geo.xmax - geo.xmin).coerceAtLeast(0.001f) * boxScaleX
+                                val sh = (geo.ymax - geo.ymin).coerceAtLeast(0.001f) * boxScaleY
+                                val left = (cx - sw / 2f) * size.width
+                                val top = (cy - sh / 2f) * size.height
+                                val right = left + sw * size.width
+                                val bottom = top + sh * size.height
+                                offset.x >= left && offset.x <= right && offset.y >= top && offset.y <= bottom
+                            } else {
+                                offset.x >= block.xmin * size.width &&
+                                    offset.x <= block.xmax * size.width &&
+                                    offset.y >= block.ymin * size.height &&
+                                    offset.y <= block.ymax * size.height
+                            }
+                        }
+                        .minByOrNull { (_, _, geo) ->
+                            geo?.let { (it.xmax - it.xmin) * (it.ymax - it.ymin) } ?: Float.MAX_VALUE
+                        }
+
+                    if (tappedMatch == null) {
                         onEmptyTap()
                     } else {
+                        val (tappedBlock, lineIndex, _) = tappedMatch
                         val tapX = (offset.x / size.width).coerceIn(0f, 1f)
                         val tapY = (offset.y / size.height).coerceIn(0f, 1f)
-                        onBlockTapped(tapped, tapX, tapY)
+                        onBlockTapped(tappedBlock, tapX, tapY, lineIndex.takeIf { it >= 0 })
                     }
                 }
             },
@@ -174,15 +200,20 @@ private fun DrawScope.drawMatchHighlight(
 
     var accumulated = 0
     for (i in lineOrder) {
-        val lineLen = block.lines[i].length
+        val lineText = block.lines[i]
+        val lineLen = lineText.length
         val lineEnd = accumulated + lineLen
         val absStart = selection.sentenceOffset + activeMatchOffset
         val absEnd = absStart + activeMatchCount
         if (absStart < lineEnd && absEnd > accumulated && i == geoIndex) {
             val overlapL = maxOf(absStart, accumulated)
             val overlapR = minOf(absEnd, lineEnd)
-            val startFrac = (overlapL - accumulated).toFloat() / lineLen.coerceAtLeast(1)
-            val endFrac = (overlapR - accumulated).toFloat() / lineLen.coerceAtLeast(1)
+
+            val offsets = getLineOffsets(lineText, block.vertical)
+            val startIndex = (overlapL - accumulated).coerceIn(0, lineLen)
+            val endIndex = (overlapR - accumulated).coerceIn(0, lineLen)
+            val startFrac = offsets[startIndex]
+            val endFrac = offsets[endIndex]
 
             val lCx = (geo.xmin + geo.xmax) / 2f
             val lCy = (geo.ymin + geo.ymax) / 2f

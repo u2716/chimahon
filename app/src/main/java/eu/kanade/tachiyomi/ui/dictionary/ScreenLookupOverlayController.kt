@@ -450,9 +450,9 @@ internal fun ScreenLookupOverlay(
             activeMatchCount = matchedCharCount,
             activeMatchOffset = matchOffset,
             selection = selection,
-            onBlockTapped = { tapped, tapX, tapY ->
-                val charOffset = tapped.screenLookupCharOffset(tapX, tapY)
-                val text = tapped.fullText
+            onBlockTapped = { tapped, tapX, tapY, lineIndex ->
+                val charOffset = tapped.screenLookupCharOffset(tapX, tapY, lineIndex)
+                val text = tapped.orderedFullText
                 if (selection?.block == tapped && selection?.sentenceOffset == charOffset) {
                     selection = null
                     matchedCharCount = 0
@@ -466,7 +466,7 @@ internal fun ScreenLookupOverlay(
                         selection = OcrSelection(
                             block = tapped,
                             lookupString = lookupString,
-                            sentence = tapped.displayText,
+                            sentence = text,
                             sentenceOffset = charOffset,
                             anchorX = tapped.xmin * widthPx,
                             anchorY = tapped.ymin * heightPx,
