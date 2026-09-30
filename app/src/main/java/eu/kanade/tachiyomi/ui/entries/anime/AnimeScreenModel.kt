@@ -1,26 +1,25 @@
 package eu.kanade.tachiyomi.ui.entries.anime
 
 import android.content.Context
-import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Immutable
-import androidx.palette.graphics.Palette
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
+import androidx.palette.graphics.Palette
+import cafe.adriel.voyager.core.model.StateScreenModel
+import cafe.adriel.voyager.core.model.screenModelScope
 import coil3.Image
 import coil3.asDrawable
 import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
-import cafe.adriel.voyager.core.model.StateScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.core.util.addOrRemove
 import eu.kanade.core.util.insertSeparators
 import eu.kanade.domain.entries.anime.interactor.SetAnimeViewerFlags
 import eu.kanade.domain.entries.anime.interactor.SyncSeasonsWithSource
-import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.domain.entries.anime.interactor.UpdateAnime
 import eu.kanade.domain.entries.anime.model.downloadedFilter
 import eu.kanade.domain.entries.anime.model.episodesFiltered
@@ -35,20 +34,22 @@ import eu.kanade.domain.entries.anime.model.toDomainAnime
 import eu.kanade.domain.entries.anime.model.toSAnime
 import eu.kanade.domain.episode.interactor.GetAvailableAnimeScanlators
 import eu.kanade.domain.episode.interactor.GetExcludedAnimeScanlators
-import eu.kanade.domain.episode.interactor.SetSeenStatus
 import eu.kanade.domain.episode.interactor.SetExcludedAnimeScanlators
+import eu.kanade.domain.episode.interactor.SetSeenStatus
 import eu.kanade.domain.episode.interactor.SyncEpisodesWithSource
 import eu.kanade.domain.track.anime.interactor.AddAnimeTracks
 import eu.kanade.domain.track.anime.interactor.RefreshAnimeTracks
 import eu.kanade.domain.track.interactor.TrackEpisode
 import eu.kanade.domain.track.model.AutoTrackState
 import eu.kanade.domain.track.service.TrackPreferences
+import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.entries.DownloadAction
 import eu.kanade.presentation.entries.anime.components.EpisodeDownloadAction
 import eu.kanade.presentation.util.formattedMessage
+import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.animesource.model.FetchType
-import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.data.animedownload.AnimeDownloadCache
 import eu.kanade.tachiyomi.data.animedownload.AnimeDownloadManager
 import eu.kanade.tachiyomi.data.animedownload.model.AnimeDownload
@@ -57,7 +58,6 @@ import eu.kanade.tachiyomi.data.torrentServer.service.TorrentServerService
 import eu.kanade.tachiyomi.data.track.EnhancedAnimeTracker
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.network.HttpException
-import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.source.isSourceForTorrents
 import eu.kanade.tachiyomi.torrentServer.TorrentServerUtils
 import eu.kanade.tachiyomi.ui.entries.anime.RelatedAnime.Companion.isLoading
@@ -71,6 +71,7 @@ import eu.kanade.tachiyomi.util.episode.getNextUnseen
 import eu.kanade.tachiyomi.util.removeCovers
 import eu.kanade.tachiyomi.util.system.getBitmapOrNull
 import eu.kanade.tachiyomi.util.system.toast
+import eu.kanade.tachiyomi.util.updateLocalCoverFromSourceFetch
 import exh.util.nullIfEmpty
 import exh.util.trimOrNull
 import kotlinx.collections.immutable.ImmutableList
@@ -80,7 +81,6 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toImmutableSet
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -89,8 +89,8 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import logcat.LogPriority
-import tachiyomi.domain.episode.interactor.FilterEpisodesForDownload
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.preference.CheckboxState
 import tachiyomi.core.common.preference.TriState
@@ -101,8 +101,12 @@ import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.data.source.NoResultsException
-import tachiyomi.domain.history.interactor.UpsertAnimeHistory
-import tachiyomi.domain.history.model.AnimeHistoryUpdate
+import tachiyomi.domain.category.interactor.GetAnimeCategories
+import tachiyomi.domain.category.interactor.SetAnimeCategories
+import tachiyomi.domain.category.model.AnimeCategory
+import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.download.service.DownloadPreferences
+import tachiyomi.domain.entries.anime.interactor.GetAnime
 import tachiyomi.domain.entries.anime.interactor.GetAnimeWithEpisodes
 import tachiyomi.domain.entries.anime.interactor.GetDuplicateLibraryAnime
 import tachiyomi.domain.entries.anime.interactor.NetworkToLocalAnime
@@ -119,21 +123,19 @@ import tachiyomi.domain.entries.anime.model.SeasonDisplayMode
 import tachiyomi.domain.entries.anime.model.applyFilter
 import tachiyomi.domain.entries.anime.model.asAnimeCover
 import tachiyomi.domain.entries.anime.repository.AnimeRepository
-import tachiyomi.domain.category.interactor.GetAnimeCategories
-import tachiyomi.domain.category.interactor.SetAnimeCategories
-import tachiyomi.domain.category.model.AnimeCategory
-import tachiyomi.domain.category.model.Category
-import tachiyomi.domain.download.service.DownloadPreferences
+import tachiyomi.domain.episode.interactor.FilterEpisodesForDownload
 import tachiyomi.domain.episode.interactor.SetAnimeDefaultEpisodeFlags
-import tachiyomi.domain.season.interactor.SetAnimeDefaultSeasonFlags
 import tachiyomi.domain.episode.interactor.UpdateEpisode
 import tachiyomi.domain.episode.model.Episode
 import tachiyomi.domain.episode.model.EpisodeUpdate
 import tachiyomi.domain.episode.service.calculateChapterGap
 import tachiyomi.domain.episode.service.getEpisodeSort
+import tachiyomi.domain.history.interactor.UpsertAnimeHistory
+import tachiyomi.domain.history.model.AnimeHistoryUpdate
 import tachiyomi.domain.library.service.LibraryPreferences
-import tachiyomi.domain.source.anime.service.AnimeSourceManager
+import tachiyomi.domain.season.interactor.SetAnimeDefaultSeasonFlags
 import tachiyomi.domain.source.anime.model.StubAnimeSource
+import tachiyomi.domain.source.anime.service.AnimeSourceManager
 import tachiyomi.domain.storage.service.StoragePreferences
 import tachiyomi.domain.track.anime.repository.AnimeTrackRepository
 import tachiyomi.i18n.MR
@@ -141,7 +143,9 @@ import tachiyomi.i18n.ank.AMR
 import tachiyomi.source.local.entries.anime.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.text.Collator
 import java.util.Calendar
+import java.util.Locale
 import kotlin.math.floor
 
 class AnimeScreenModel(
@@ -159,6 +163,9 @@ class AnimeScreenModel(
     private val animeDownloadManager: AnimeDownloadManager = Injekt.get(),
     private val animeDownloadCache: AnimeDownloadCache = Injekt.get(),
     private val getAnimeAndEpisodes: GetAnimeWithEpisodes = Injekt.get(),
+    // AY -->
+    private val getAnime: GetAnime = Injekt.get(),
+    // <-- AY
     // SY -->
     private val animeSourceManager: AnimeSourceManager = Injekt.get(),
     private val setCustomAnimeInfo: SetCustomAnimeInfo = Injekt.get(),
@@ -706,6 +713,13 @@ class AnimeScreenModel(
         }
     }
 
+    fun showEditAnimeInfoDialog() {
+        val anime = successState?.anime ?: return
+        updateSuccessState {
+            it.copy(dialog = Dialog.EditAnimeInfo(anime))
+        }
+    }
+
     fun setFetchInterval(anime: Anime, interval: Int) {
         screenModelScope.launchIO {
             if (
@@ -898,7 +912,8 @@ class AnimeScreenModel(
         val state = successState ?: return
         try {
             withIOContext {
-                val episodes = state.source.getEpisodeList(state.anime.toSAnime())
+                val sAnime = state.anime.toSAnime()
+                val episodes = state.source.getEpisodeList(sAnime)
 
                 val newEpisodes = syncEpisodesWithSource.await(
                     episodes,
@@ -906,6 +921,7 @@ class AnimeScreenModel(
                     state.source,
                     manualFetch,
                 )
+                state.anime.updateLocalCoverFromSourceFetch(state.source, sAnime, updateAnime)
 
                 if (manualFetch) {
                     downloadNewEpisodes(newEpisodes)
@@ -1155,7 +1171,22 @@ class AnimeScreenModel(
                 return@launchIO
             }
 
-            val tracks = animeTrackRepository.getTracksByAnimeId(animeId)
+            // AY -->
+            // A season's track lives on the parent, and its episode numbers are its own, so an
+            // entry numbered absolutely (Season 2 = episodes 13-24) will over-report progress.
+            val trackAnimeId = successState?.anime?.parentId ?: animeId
+            // <-- AY
+
+            // KMK -->
+            // Refresh first so the prompt/tracker decision uses current remote progress,
+            // mirroring MangaScreenModel.markChaptersRead. Gated by the same preference that
+            // gates tracker -> local syncing to avoid pulling progress when it is disabled.
+            if (trackPreferences.autoSyncProgressFromTrackers().get()) {
+                refreshAnimeTracks.await(trackAnimeId)
+            }
+            // KMK <--
+
+            val tracks = animeTrackRepository.getTracksByAnimeId(trackAnimeId)
             val maxEpisodeNumber = episodes.maxOf { it.episodeNumber }
             val shouldPromptTrackingUpdate = tracks.any { track -> maxEpisodeNumber > track.lastEpisodeSeen }
 
@@ -1532,6 +1563,7 @@ class AnimeScreenModel(
             val anime: Anime,
             val initialSelection: ImmutableList<CheckboxState<Category>>,
         ) : Dialog
+        data class EditAnimeInfo(val anime: Anime) : Dialog
         data class DeleteEpisodes(val episodes: List<Episode>) : Dialog
         data class DuplicateAnime(val anime: Anime, val duplicates: List<Anime>) : Dialog
         data class Migrate(val newAnime: Anime, val oldAnime: Anime) : Dialog
@@ -1624,6 +1656,15 @@ class AnimeScreenModel(
     fun showTrackDialog() {
         updateSuccessState { it.copy(dialog = Dialog.TrackSheet) }
     }
+
+    // AY -->
+    /** The anime to track: seasons are their own rows titled "Season N", but the track is the series'. */
+    suspend fun getTrackableAnime(): Anime? {
+        val anime = successState?.anime ?: return null
+        val parentId = anime.parentId ?: return anime
+        return getAnime.await(parentId) ?: anime
+    }
+    // <-- AY
 
     fun showImagesDialog() {
         updateSuccessState { it.copy(dialog = Dialog.FullImages) }
@@ -1902,8 +1943,9 @@ class AnimeScreenModel(
             val filterActive: Boolean
                 get() = when (anime.fetchType) {
                     eu.kanade.tachiyomi.animesource.model.FetchType.Seasons -> anime.seasonsFiltered()
-                    eu.kanade.tachiyomi.animesource.model.FetchType.Episodes -> scanlatorFilterActive ||
-                        anime.episodesFiltered()
+                    eu.kanade.tachiyomi.animesource.model.FetchType.Episodes ->
+                        scanlatorFilterActive ||
+                            anime.episodesFiltered()
                 }
 
             val scanlatorFilterActive: Boolean
@@ -1938,24 +1980,44 @@ class AnimeScreenModel(
                 val bookmarkedFilter = anime.seasonBookmarkedFilter
                 val fillermarkedFilter = anime.seasonFillermarkedFilter
                 return asSequence()
-                .filter { applyFilter(unseenFilter) { !it.seasonAnime.seen } }
-                .filter { applyFilter(downloadedFilter) { it.downloadCount > 0 || it.isLocal } }
-                .filter { applyFilter(startedFilter) { it.seasonAnime.hasStarted } }
-                .filter { applyFilter(completedFilter) { it.seasonAnime.anime.status == SAnime.COMPLETED.toLong() } }
+                    .filter { applyFilter(unseenFilter) { !it.seasonAnime.seen } }
+                    .filter { applyFilter(downloadedFilter) { it.downloadCount > 0 || it.isLocal } }
+                    .filter { applyFilter(startedFilter) { it.seasonAnime.hasStarted } }
+                    .filter { applyFilter(completedFilter) { it.seasonAnime.anime.status == SAnime.COMPLETED.toLong() } }
                     .filter { applyFilter(bookmarkedFilter) { it.seasonAnime.hasBookmarks } }
                     .filter { applyFilter(fillermarkedFilter) { it.seasonAnime.hasFillermarks } }
-                    .sortedWith(seasonSortComparator(anime))
+                    .sortedWith(seasonSortComparator(anime, Collator.getInstance(Locale.getDefault())))
                     .toList()
             }
 
-            private fun seasonSortComparator(anime: Anime): Comparator<AnimeSeasonItem> {
+            private fun seasonSortComparator(
+                anime: Anime,
+                collator: Collator,
+            ): Comparator<AnimeSeasonItem> {
                 val sortDescending = anime.seasonSortDescending()
                 val comparator: Comparator<AnimeSeasonItem> = when (anime.seasonSorting) {
                     Anime.SEASON_SORTING_SOURCE -> compareBy { it.seasonAnime.anime.source }
                     Anime.SEASON_SORTING_NUMBER -> compareBy { it.seasonAnime.anime.seasonNumber }
                     Anime.SEASON_SORTING_UPLOAD_DATE -> compareBy { it.seasonAnime.latestUpload }
-                    Anime.SEASON_SORTING_ALPHABET -> compareBy { it.seasonAnime.anime.title }
-                    Anime.SEASON_SORTING_UNSEEN -> compareBy { it.seasonAnime.unseenCount }
+                    // AY -->
+                    // Locale-aware, matching the library sort. A raw compareBy would order
+                    // case-sensitively and put accented titles after every ASCII one.
+                    Anime.SEASON_SORTING_ALPHABET -> Comparator { a, b ->
+                        collator.compare(a.seasonAnime.anime.title, b.seasonAnime.anime.title)
+                    }
+                    // Fully-watched seasons always sink, so they don't occupy the top of the list
+                    // when sorting ascending. Mirrors the library sort's unseen handling.
+                    Anime.SEASON_SORTING_UNSEEN -> Comparator { a, b ->
+                        val aCount = a.seasonAnime.unseenCount
+                        val bCount = b.seasonAnime.unseenCount
+                        when {
+                            aCount == bCount -> 0
+                            aCount == 0L -> if (sortDescending) -1 else 1
+                            bCount == 0L -> if (sortDescending) 1 else -1
+                            else -> aCount.compareTo(bCount)
+                        }
+                    }
+                    // <-- AY
                     Anime.SEASON_SORTING_LAST_SEEN -> compareBy { it.seasonAnime.lastSeen }
                     Anime.SEASON_SORTING_EP_FETCH_DATE -> compareBy { it.seasonAnime.fetchedAt }
                     else -> compareBy { it.seasonAnime.anime.seasonSourceOrder }
