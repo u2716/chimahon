@@ -8,10 +8,7 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
 import chimahon.ocr.OcrLanguage
-import eu.kanade.tachiyomi.ui.reader.viewer.OcrLineGeometry
-import eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock
 import java.io.File
-import kotlin.math.min
 
 internal const val CAMERA_OCR_CAPTURE_NAME = "camera_ocr_capture.jpg"
 
@@ -114,69 +111,4 @@ private fun applyExifRotation(bitmap: Bitmap, degrees: Int): Bitmap {
     val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     if (rotated !== bitmap) bitmap.recycle()
     return rotated
-}
-
-/** Where a `ContentScale.Fit` image lands inside its canvas, in canvas pixels. */
-internal data class FittedImageRect(
-    val left: Float,
-    val top: Float,
-    val width: Float,
-    val height: Float,
-)
-
-internal fun fitImageRect(
-    imgWidth: Int,
-    imgHeight: Int,
-    canvasWidth: Float,
-    canvasHeight: Float,
-): FittedImageRect {
-    if (imgWidth <= 0 || imgHeight <= 0 || canvasWidth <= 0f || canvasHeight <= 0f) {
-        return FittedImageRect(0f, 0f, maxOf(canvasWidth, 0f), maxOf(canvasHeight, 0f))
-    }
-    val scale = min(canvasWidth / imgWidth, canvasHeight / imgHeight)
-    val width = imgWidth * scale
-    val height = imgHeight * scale
-    return FittedImageRect(
-        left = (canvasWidth - width) / 2f,
-        top = (canvasHeight - height) / 2f,
-        width = width,
-        height = height,
-    )
-}
-
-/**
- * Re-normalizes image-relative OCR blocks into canvas-relative ones so they line up with a
- * `ContentScale.Fit` image. Drops blocks that collapse to zero area.
- */
-internal fun remapBlocksToCanvas(
-    blocks: List<OcrTextBlock>,
-    rect: FittedImageRect,
-    canvasWidth: Float,
-    canvasHeight: Float,
-): List<OcrTextBlock> {
-    if (canvasWidth <= 0f || canvasHeight <= 0f) return blocks
-    val toCanvasX = { x: Float -> (rect.left + x * rect.width) / canvasWidth }
-    val toCanvasY = { y: Float -> (rect.top + y * rect.height) / canvasHeight }
-    return blocks.mapNotNull { block ->
-        val xmin = toCanvasX(block.xmin)
-        val ymin = toCanvasY(block.ymin)
-        val xmax = toCanvasX(block.xmax)
-        val ymax = toCanvasY(block.ymax)
-        if (xmax <= xmin || ymax <= ymin) return@mapNotNull null
-        block.copy(
-            xmin = xmin,
-            ymin = ymin,
-            xmax = xmax,
-            ymax = ymax,
-            lineGeometries = block.lineGeometries?.map { geo ->
-                OcrLineGeometry(
-                    xmin = toCanvasX(geo.xmin),
-                    ymin = toCanvasY(geo.ymin),
-                    xmax = toCanvasX(geo.xmax),
-                    ymax = toCanvasY(geo.ymax),
-                    rotation = geo.rotation,
-                )
-            },
-        )
-    }
 }

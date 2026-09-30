@@ -82,6 +82,11 @@ class ScreenLookupPermissionActivity : BaseActivity() {
         }
     }
 
+    override fun onDestroy() {
+        ScreenLookupServiceState.isEntryInProgress = false
+        super.onDestroy()
+    }
+
     private fun openOverlaySettings() {
         returnedFromOverlaySettings = true
         val intent = Intent(

@@ -83,7 +83,6 @@ import eu.kanade.tachiyomi.data.ocr.OcrEngineType
 import eu.kanade.tachiyomi.data.ocr.recognizePage
 import eu.kanade.tachiyomi.ui.reader.viewer.OcrLookupPopup
 import eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock
-import eu.kanade.tachiyomi.ui.reader.viewer.displayText
 import eu.kanade.tachiyomi.ui.reader.viewer.extractOcrLookupString
 import eu.kanade.tachiyomi.ui.reader.viewer.fullText
 import eu.kanade.tachiyomi.ui.reader.viewer.isLookupStartChar
@@ -97,7 +96,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tachiyomi.core.common.i18n.stringResource as contextStringResource
@@ -106,6 +104,48 @@ import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+
+private val OcrEngineType.preferenceKey: String
+    get() = when (this) {
+        OcrEngineType.CLOUD -> "cloud"
+        OcrEngineType.LOCAL -> "local"
+        OcrEngineType.PADDLE -> "paddle"
+    }
+
+private val OcrEngineType.label: String
+    get() = when (this) {
+        OcrEngineType.CLOUD -> "Cloud"
+        OcrEngineType.LOCAL -> "Local"
+        OcrEngineType.PADDLE -> "Paddle OCR"
+    }
+
+/** Clamp bounds for the draggable control bar, in pixels. */
+private data class BarBounds(
+    val minX: Float,
+    val maxX: Float,
+    val minY: Float,
+    val maxY: Float,
+) {
+    fun clamp(offset: Offset): Offset = Offset(
+        x = offset.x.coerceIn(minX, maxX),
+        y = offset.y.coerceIn(minY, maxY),
+    )
+}
+
+@Composable
+private fun rememberBarBounds(widthPx: Float, heightPx: Float): BarBounds {
+    val density = LocalDensity.current
+    return remember(widthPx, heightPx, density) {
+        with(density) {
+            BarBounds(
+                minX = -(widthPx - 90.dp.toPx()),
+                maxX = 12.dp.toPx(),
+                minY = -16.dp.toPx(),
+                maxY = heightPx - 80.dp.toPx(),
+            )
+        }
+    }
+}
 
 internal class ScreenLookupOverlayController(
     private val context: Context,
@@ -308,7 +348,8 @@ internal fun ScreenLookupOverlay(
     val boxScaleY = dictionaryPreferences.ocrBoxScaleY().get()
 
     val ocrEnginePref = remember { dictionaryPreferences.ocrEngine() }
-    val ocrEngine by ocrEnginePref.collectAsState()
+    val ocrEngineKey by ocrEnginePref.collectAsState()
+    val ocrEngine = OcrEngineType.fromPreference(ocrEngineKey)
     var barOffset by remember { mutableStateOf(initialBarOffset) }
     var isDropdownOpen by remember { mutableStateOf(false) }
 
@@ -343,8 +384,7 @@ internal fun ScreenLookupOverlay(
 
         runCatching {
             withContext(Dispatchers.Default) {
-                val engineType = OcrEngineType.fromPreference(ocrEngine)
-                recognizePage(screenshot, language, engineType)
+                recognizePage(screenshot, language, ocrEngine)
                     .toScreenLookupBlocks(language.bcp47)
             }
         }.onSuccess {
@@ -359,21 +399,14 @@ internal fun ScreenLookupOverlay(
     }
 
     BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
     ) {
         val widthPx = with(localDensity) { maxWidth.toPx() }
         val heightPx = with(localDensity) { maxHeight.toPx() }
+        val barBounds = rememberBarBounds(widthPx, heightPx)
 
-        LaunchedEffect(widthPx, heightPx) {
-            val minX = -(widthPx - with(localDensity) { 90.dp.toPx() })
-            val maxX = with(localDensity) { 12.dp.toPx() }
-            val minY = with(localDensity) { -16.dp.toPx() }
-            val maxY = heightPx - with(localDensity) { 80.dp.toPx() }
-            val clamped = Offset(
-                x = barOffset.x.coerceIn(minX, maxX),
-                y = barOffset.y.coerceIn(minY, maxY),
-            )
+        LaunchedEffect(barBounds) {
+            val clamped = barBounds.clamp(barOffset)
             if (clamped != barOffset) {
                 barOffset = clamped
                 onBarOffsetChanged(clamped)
@@ -400,11 +433,11 @@ internal fun ScreenLookupOverlay(
             onSelectOcrEngine = { selected ->
                 isDropdownOpen = false
                 if (selected != ocrEngine) {
-                    ocrEnginePref.set(selected)
-                    if (selected == "local") {
-                        Injekt.get<ModelDownloader>().triggerDownload()
-                    } else if (selected == "paddle") {
-                        Injekt.get<ModelDownloader>().triggerPaddleDownload()
+                    ocrEnginePref.set(selected.preferenceKey)
+                    when (selected) {
+                        OcrEngineType.LOCAL -> Injekt.get<ModelDownloader>().triggerDownload()
+                        OcrEngineType.PADDLE -> Injekt.get<ModelDownloader>().triggerPaddleDownload()
+                        OcrEngineType.CLOUD -> Unit
                     }
                     blocks = emptyList()
                 }
@@ -422,15 +455,8 @@ internal fun ScreenLookupOverlay(
                 }
             },
             onDrag = { dragAmount ->
-                val newX = barOffset.x + dragAmount.x
-                val newY = barOffset.y + dragAmount.y
-                val minX = -(widthPx - with(localDensity) { 90.dp.toPx() })
-                val maxX = with(localDensity) { 12.dp.toPx() }
-                val minY = with(localDensity) { -16.dp.toPx() }
-                val maxY = heightPx - with(localDensity) { 80.dp.toPx() }
-                val updated = Offset(
-                    x = newX.coerceIn(minX, maxX),
-                    y = newY.coerceIn(minY, maxY),
+                val updated = barBounds.clamp(
+                    Offset(barOffset.x + dragAmount.x, barOffset.y + dragAmount.y),
                 )
                 barOffset = updated
                 onBarOffsetChanged(updated)
@@ -451,34 +477,19 @@ internal fun ScreenLookupOverlay(
             activeMatchOffset = matchOffset,
             selection = selection,
             onBlockTapped = { tapped, tapX, tapY, lineIndex ->
-                val charOffset = tapped.screenLookupCharOffset(tapX, tapY, lineIndex)
-                val text = tapped.orderedFullText
-                if (selection?.block == tapped && selection?.sentenceOffset == charOffset) {
-                    selection = null
-                    matchedCharCount = 0
-                    matchOffset = 0
-                } else if (charOffset in text.indices && isLookupStartChar(text[charOffset])) {
-                    val lookupString = extractOcrLookupString(text, charOffset)
-                    if (lookupString.isNotBlank()) {
-                        lookupNonce++
-                        matchedCharCount = 0
-                        matchOffset = 0
-                        selection = OcrSelection(
-                            block = tapped,
-                            lookupString = lookupString,
-                            sentence = text,
-                            sentenceOffset = charOffset,
-                            anchorX = tapped.xmin * widthPx,
-                            anchorY = tapped.ymin * heightPx,
-                            anchorWidth = (tapped.xmax - tapped.xmin) * widthPx,
-                            anchorHeight = (tapped.ymax - tapped.ymin) * heightPx,
-                        )
-                    } else {
-                        selection = null
-                    }
+                val next = resolveOcrTap(
+                    tapped, tapX, tapY, lineIndex,
+                    canvasWidth = widthPx, canvasHeight = heightPx,
+                    currentSelection = selection,
+                )
+                if (next != null) {
+                    lookupNonce++
+                    selection = next
                 } else {
                     selection = null
                 }
+                matchedCharCount = 0
+                matchOffset = 0
             },
             onEmptyTap = {
                 selection = null
@@ -495,13 +506,21 @@ internal fun ScreenLookupOverlay(
         val selected = selection
         val cropMode = activeProfile.ankiCropMode
         val cropPresetKey = activeProfile.ankiCropPreset
-        val cropPreset = chimahon.ocr.CropPresets.aspectByKey(cropPresetKey)
+        val cropPreset = CropPresets.aspectByKey(cropPresetKey)
 
-        if (selected != null) {
-            val (popupScreenshot, popupOnRequestScreenshot) = if (cropMode == "no_screenshot") {
-                null to null
-            } else if (cropPreset != null) {
-                val cropped = cropAroundAnchor(
+        // Compute the crop only when the selection or crop settings actually change,
+        // not on every barOffset / highlight recomposition.
+        val popupScreenshot: Bitmap? = remember(
+            screenshot,
+            selected?.block,
+            selected?.sentenceOffset,
+            cropMode,
+            cropPresetKey,
+        ) {
+            when {
+                selected == null -> null
+                cropMode == "no_screenshot" -> null
+                cropPreset != null -> cropAroundAnchor(
                     bitmap = screenshot,
                     anchorX = selected.anchorX,
                     anchorY = selected.anchorY,
@@ -510,11 +529,16 @@ internal fun ScreenLookupOverlay(
                     aspectX = cropPreset.x,
                     aspectY = cropPreset.y,
                 )
-                cropped to { cropped }
-            } else {
-                screenshot to { screenshot }
+                else -> screenshot
             }
+        }
+        val popupOnRequestScreenshot: (() -> Bitmap?)? = when {
+            cropMode == "no_screenshot" -> null
+            popupScreenshot != null -> ({ popupScreenshot })
+            else -> null
+        }
 
+        if (selected != null) {
             key(selected.lookupString, lookupNonce) {
                 OcrLookupPopup(
                     visible = true,
@@ -549,10 +573,10 @@ internal fun ScreenLookupOverlay(
 
 @Composable
 private fun ScreenLookupControls(
-    ocrEngine: String,
+    ocrEngine: OcrEngineType,
     isDropdownOpen: Boolean,
     onToggleDropdown: () -> Unit,
-    onSelectOcrEngine: (String) -> Unit,
+    onSelectOcrEngine: (OcrEngineType) -> Unit,
     onCopy: () -> Unit,
     onDrag: (Offset) -> Unit,
     modifier: Modifier = Modifier,
@@ -631,24 +655,13 @@ private fun ScreenLookupControls(
                         .width(IntrinsicSize.Max)
                         .padding(vertical = 4.dp),
                 ) {
-                    DropdownEngineItem(
-                        title = "Cloud",
-                        engine = "cloud",
-                        isSelected = ocrEngine == "cloud",
-                        onClick = { onSelectOcrEngine("cloud") },
-                    )
-                    DropdownEngineItem(
-                        title = "Local",
-                        engine = "local",
-                        isSelected = ocrEngine == "local",
-                        onClick = { onSelectOcrEngine("local") },
-                    )
-                    DropdownEngineItem(
-                        title = "Paddle OCR",
-                        engine = "paddle",
-                        isSelected = ocrEngine == "paddle",
-                        onClick = { onSelectOcrEngine("paddle") },
-                    )
+                    OcrEngineType.entries.forEach { option ->
+                        DropdownEngineItem(
+                            option = option,
+                            isSelected = option == ocrEngine,
+                            onClick = { onSelectOcrEngine(option) },
+                        )
+                    }
                 }
             }
         }
@@ -657,8 +670,7 @@ private fun ScreenLookupControls(
 
 @Composable
 private fun DropdownEngineItem(
-    title: String,
-    engine: String,
+    option: OcrEngineType,
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -672,12 +684,12 @@ private fun DropdownEngineItem(
     ) {
         val contentColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.White
         OcrEngineIcon(
-            engine = engine,
+            engine = option,
             tint = contentColor,
             modifier = Modifier.size(20.dp),
         )
         Text(
-            text = title,
+            text = option.label,
             color = contentColor,
             fontSize = 14.sp,
             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
@@ -687,45 +699,36 @@ private fun DropdownEngineItem(
 
 @Composable
 private fun OcrEngineIcon(
-    engine: String,
+    engine: OcrEngineType,
     modifier: Modifier = Modifier,
     tint: Color = Color.White,
 ) {
     when (engine) {
-        "local" -> {
+        OcrEngineType.LOCAL -> Icon(
+            imageVector = Icons.Outlined.Smartphone,
+            contentDescription = null,
+            tint = tint,
+            modifier = modifier,
+        )
+        OcrEngineType.PADDLE -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = Icons.Outlined.Smartphone,
                 contentDescription = null,
                 tint = tint,
-                modifier = modifier,
+            )
+            Text(
+                text = "2",
+                color = tint,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier.offset(y = (-0.5).dp),
             )
         }
-        "paddle" -> {
-            Box(
-                modifier = modifier,
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Smartphone,
-                    contentDescription = null,
-                    tint = tint,
-                )
-                Text(
-                    text = "2",
-                    color = tint,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black,
-                    modifier = Modifier.offset(y = (-0.5).dp),
-                )
-            }
-        }
-        else -> {
-            Icon(
-                imageVector = Icons.Outlined.Cloud,
-                contentDescription = null,
-                tint = tint,
-                modifier = modifier,
-            )
-        }
+        OcrEngineType.CLOUD -> Icon(
+            imageVector = Icons.Outlined.Cloud,
+            contentDescription = null,
+            tint = tint,
+            modifier = modifier,
+        )
     }
 }

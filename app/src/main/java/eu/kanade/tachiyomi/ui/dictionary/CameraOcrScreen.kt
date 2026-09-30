@@ -47,12 +47,9 @@ import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.ocr.recognizePage
 import eu.kanade.tachiyomi.ui.reader.viewer.OcrLookupPopup
 import eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock
-import eu.kanade.tachiyomi.ui.reader.viewer.extractOcrLookupString
-import eu.kanade.tachiyomi.ui.reader.viewer.isLookupStartChar
-import eu.kanade.tachiyomi.ui.reader.viewer.orderedFullText
+import eu.kanade.tachiyomi.ui.reader.viewer.mapToFitViewport
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.kmk.KMR
@@ -63,13 +60,6 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
 
-private const val TAP_HINT_DURATION_MS = 1_200L
-
-/**
- * Captures a still with the system camera app, OCRs it once using the global OCR engine and
- * the active dictionary profile's language, then overlays the recognized text boxes on the
- * photo. Tapping a box opens the regular [OcrLookupPopup] anchored to it.
- */
 class CameraOcrScreen : Screen() {
 
     @Composable
@@ -86,7 +76,6 @@ class CameraOcrScreen : Screen() {
         val captureFailedText = stringResource(KMR.strings.camera_ocr_capture_failed)
         val findingText = stringResource(MR.strings.screen_lookup_finding_text)
         val noTextText = stringResource(MR.strings.screen_lookup_no_text)
-        val tapText = stringResource(MR.strings.screen_lookup_tap_text)
 
         val dictionaryPreferences = remember { Injekt.get<DictionaryPreferences>() }
         val repository = remember { Injekt.get<DictionaryRepository>() }
@@ -109,14 +98,12 @@ class CameraOcrScreen : Screen() {
             }
         }
 
-        // Only the path is saved; the bitmap is re-decoded after a configuration change.
         var capturePath by rememberSaveable { mutableStateOf<String?>(null) }
         var bitmap by remember { mutableStateOf<Bitmap?>(null) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
         var isLoading by remember { mutableStateOf(false) }
         var blocks by remember { mutableStateOf<List<OcrTextBlock>>(emptyList()) }
         var selection by remember { mutableStateOf<OcrSelection?>(null) }
-        var showTapHint by remember { mutableStateOf(false) }
         var lookupNonce by remember { mutableIntStateOf(0) }
         var matchedCharCount by remember { mutableIntStateOf(0) }
         var matchOffset by remember { mutableIntStateOf(0) }
@@ -141,13 +128,10 @@ class CameraOcrScreen : Screen() {
             } catch (e: android.content.ActivityNotFoundException) {
                 launchError = unavailableText
             } catch (e: SecurityException) {
-                // The system blocks IMAGE_CAPTURE when we don't hold CAMERA.
                 launchError = permissionDeniedText
             }
         }
 
-        // The app declares CAMERA (it also arrives via the ZXing manifest), so the system
-        // refuses to launch the system camera until we actually hold it.
         val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
                 startCapture()
@@ -159,7 +143,6 @@ class CameraOcrScreen : Screen() {
         fun launchCapture() {
             selection = null
             blocks = emptyList()
-            showTapHint = false
             matchedCharCount = 0
             matchOffset = 0
             errorMessage = null
@@ -220,19 +203,12 @@ class CameraOcrScreen : Screen() {
                 blocks = recognized
                 if (recognized.isEmpty()) {
                     errorMessage = noTextText
-                } else {
-                    showTapHint = true
                 }
             }.onFailure {
                 blocks = emptyList()
                 errorMessage = it.message ?: captureFailedText
             }
             isLoading = false
-
-            if (showTapHint) {
-                delay(TAP_HINT_DURATION_MS)
-                showTapHint = false
-            }
         }
 
         val boxScaleX = dictionaryPreferences.ocrBoxScaleX().get()
@@ -294,13 +270,15 @@ class CameraOcrScreen : Screen() {
                         }
                     }
                 } else {
-                    val fittedRect = fitImageRect(
-                        imgWidth = currentBitmap.width,
-                        imgHeight = currentBitmap.height,
-                        canvasWidth = canvasWidth,
-                        canvasHeight = canvasHeight,
-                    )
-                    val canvasBlocks = remapBlocksToCanvas(blocks, fittedRect, canvasWidth, canvasHeight)
+                    val canvasBlocks = remember(blocks, currentBitmap, canvasWidth, canvasHeight) {
+                        mapToFitViewport(
+                            blocks = blocks,
+                            imgWidth = currentBitmap.width,
+                            imgHeight = currentBitmap.height,
+                            canvasWidth = canvasWidth,
+                            canvasHeight = canvasHeight,
+                        )
+                    }
 
                     Image(
                         bitmap = currentBitmap.asImageBitmap(),
@@ -318,38 +296,19 @@ class CameraOcrScreen : Screen() {
                         activeMatchOffset = matchOffset,
                         selection = selection,
                         onBlockTapped = { tapped, tapX, tapY, lineIndex ->
-                            val charOffset = tapped.screenLookupCharOffset(tapX, tapY, lineIndex)
-                            val text = tapped.orderedFullText
-                            if (selection?.block == tapped && selection?.sentenceOffset == charOffset) {
-                                selection = null
-                                showTapHint = false
-                                matchedCharCount = 0
-                                matchOffset = 0
-                            } else if (charOffset in text.indices && isLookupStartChar(text[charOffset])) {
-                                val lookupString = extractOcrLookupString(text, charOffset)
-                                if (lookupString.isNotBlank()) {
-                                    lookupNonce++
-                                    showTapHint = false
-                                    matchedCharCount = 0
-                                    matchOffset = 0
-                                    selection = OcrSelection(
-                                        block = tapped,
-                                        lookupString = lookupString,
-                                        sentence = text,
-                                        sentenceOffset = charOffset,
-                                        anchorX = tapped.xmin * canvasWidth,
-                                        anchorY = tapped.ymin * canvasHeight,
-                                        anchorWidth = (tapped.xmax - tapped.xmin) * canvasWidth,
-                                        anchorHeight = (tapped.ymax - tapped.ymin) * canvasHeight,
-                                    )
-                                } else {
-                                    selection = null
-                                    showTapHint = false
-                                }
+                            val next = resolveOcrTap(
+                                tapped, tapX, tapY, lineIndex,
+                                canvasWidth = canvasWidth, canvasHeight = canvasHeight,
+                                currentSelection = selection,
+                            )
+                            if (next != null) {
+                                lookupNonce++
+                                selection = next
                             } else {
                                 selection = null
-                                showTapHint = false
                             }
+                            matchedCharCount = 0
+                            matchOffset = 0
                         },
                         onEmptyTap = { selection = null },
                     )
@@ -359,14 +318,6 @@ class CameraOcrScreen : Screen() {
                         error = errorMessage.takeIf { isLoading.not() },
                         loadingText = findingText,
                         modifier = Modifier.align(Alignment.Center),
-                    )
-
-                    OcrTapHint(
-                        visible = showTapHint && canvasBlocks.isNotEmpty() && selection == null,
-                        hintText = tapText,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 24.dp),
                     )
 
                     val selected = selection

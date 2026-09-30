@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.viewer
 
 import android.graphics.RectF
+import androidx.compose.ui.geometry.Rect
 import okio.BufferedSource
 import tachiyomi.decoder.ImageDecoder
 import java.io.ByteArrayInputStream
@@ -453,6 +454,70 @@ object OcrCoordinateMapper {
             decoder.cropY.toFloat() / decoder.originalHeight,
             (decoder.cropX + decoder.width).toFloat() / decoder.originalWidth,
             (decoder.cropY + decoder.height).toFloat() / decoder.originalHeight,
+        )
+    }
+}
+
+// ──────────────────────────────────────────────────
+// Fit-to-viewport remap (screen lookup / camera / video OCR)
+// ──────────────────────────────────────────────────
+
+/**
+ * Rect (in canvas pixels) of a `ContentScale.Fit` image inside its viewport.
+ * Mirrors the `ContentScale.Fit` behavior: uniform scale, centered.
+ */
+fun fitImageRect(
+    imgWidth: Int,
+    imgHeight: Int,
+    canvasWidth: Float,
+    canvasHeight: Float,
+): Rect {
+    if (imgWidth <= 0 || imgHeight <= 0 || canvasWidth <= 0f || canvasHeight <= 0f) {
+        return Rect(0f, 0f, canvasWidth.coerceAtLeast(0f), canvasHeight.coerceAtLeast(0f))
+    }
+    val scale = minOf(canvasWidth / imgWidth, canvasHeight / imgHeight)
+    val w = imgWidth * scale
+    val h = imgHeight * scale
+    val left = (canvasWidth - w) / 2f
+    val top = (canvasHeight - h) / 2f
+    return Rect(left, top, left + w, top + h)
+}
+
+/**
+ * Remaps image-relative OCR blocks into viewport-relative space so they align with a
+ * `ContentScale.Fit` image. Drops blocks that collapse to zero area.
+ */
+fun mapToFitViewport(
+    blocks: List<OcrTextBlock>,
+    imgWidth: Int,
+    imgHeight: Int,
+    canvasWidth: Float,
+    canvasHeight: Float,
+): List<OcrTextBlock> {
+    if (canvasWidth <= 0f || canvasHeight <= 0f) return blocks
+    val rect = fitImageRect(imgWidth, imgHeight, canvasWidth, canvasHeight)
+    val toCanvasX = { x: Float -> (rect.left + x * rect.width) / canvasWidth }
+    val toCanvasY = { y: Float -> (rect.top + y * rect.height) / canvasHeight }
+    return blocks.mapNotNull { block ->
+        val xmin = toCanvasX(block.xmin)
+        val ymin = toCanvasY(block.ymin)
+        val xmax = toCanvasX(block.xmax)
+        val ymax = toCanvasY(block.ymax)
+        if (xmax <= xmin || ymax <= ymin) return@mapNotNull null
+        block.copy(
+            xmin = xmin,
+            ymin = ymin,
+            xmax = xmax,
+            ymax = ymax,
+            lineGeometries = block.lineGeometries?.map { geo ->
+                OcrLineGeometry(
+                    xmin = toCanvasX(geo.xmin),
+                    ymin = toCanvasY(geo.ymin),
+                    xmax = toCanvasX(geo.xmax),
+                    ymax = toCanvasY(geo.ymax),
+                    rotation = geo.rotation,
+                )
+            },
         )
     }
 }
