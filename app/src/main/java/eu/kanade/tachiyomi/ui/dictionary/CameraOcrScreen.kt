@@ -50,7 +50,6 @@ import eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock
 import eu.kanade.tachiyomi.ui.reader.viewer.extractOcrLookupString
 import eu.kanade.tachiyomi.ui.reader.viewer.isLookupStartChar
 import eu.kanade.tachiyomi.ui.reader.viewer.orderedFullText
-import eu.kanade.tachiyomi.ui.reader.viewer.toOrderedOffset
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -318,17 +317,16 @@ class CameraOcrScreen : Screen() {
                         activeMatchCount = matchedCharCount,
                         activeMatchOffset = matchOffset,
                         selection = selection,
-                        onBlockTapped = { tapped, tapX, tapY ->
-                            val charOffset = tapped.screenLookupCharOffset(tapX, tapY)
-                            val orderedCharOffset = tapped.toOrderedOffset(charOffset)
+                        onBlockTapped = { tapped, tapX, tapY, lineIndex ->
+                            val charOffset = tapped.screenLookupCharOffset(tapX, tapY, lineIndex)
                             val text = tapped.orderedFullText
-                            if (selection?.block == tapped && selection?.sentenceOffset == orderedCharOffset) {
+                            if (selection?.block == tapped && selection?.sentenceOffset == charOffset) {
                                 selection = null
                                 showTapHint = false
                                 matchedCharCount = 0
                                 matchOffset = 0
-                            } else if (orderedCharOffset in text.indices && isLookupStartChar(text[orderedCharOffset])) {
-                                val lookupString = extractOcrLookupString(text, orderedCharOffset)
+                            } else if (charOffset in text.indices && isLookupStartChar(text[charOffset])) {
+                                val lookupString = extractOcrLookupString(text, charOffset)
                                 if (lookupString.isNotBlank()) {
                                     lookupNonce++
                                     showTapHint = false
@@ -338,7 +336,7 @@ class CameraOcrScreen : Screen() {
                                         block = tapped,
                                         lookupString = lookupString,
                                         sentence = text,
-                                        sentenceOffset = orderedCharOffset,
+                                        sentenceOffset = charOffset,
                                         anchorX = tapped.xmin * canvasWidth,
                                         anchorY = tapped.ymin * canvasHeight,
                                         anchorWidth = (tapped.xmax - tapped.xmin) * canvasWidth,
