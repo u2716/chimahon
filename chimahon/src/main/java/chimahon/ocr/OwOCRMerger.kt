@@ -517,11 +517,7 @@ object OwOCRMerger {
         val mergedRight = maxOf(line1.bbox.right, line2.bbox.right) * imgW
         val mergedBottom = maxOf(line1.bbox.bottom, line2.bbox.bottom) * imgH
         val mergedArea = maxOf(0.0, mergedRight - mergedLeft) * maxOf(0.0, mergedBottom - mergedTop)
-        
-        if (mergedArea > 0 && (area1 + area2) / mergedArea < minDensityReq) {
-            return false
-        }
-        
+
         if (isVertical) {
             val hDist = horizontalDistance(line1.bbox, line2.bbox) * imgW
             val lineWidth = (w1 + w2) / 2
@@ -533,6 +529,13 @@ object OwOCRMerger {
             val yMaxDiff = abs(line1.bbox.bottom - line2.bbox.bottom) * imgH
             if (yMinDiff > characterSize * 2.0 && yMaxDiff > characterSize * 2.0) {
                 return false // Staggered lines are probably separate bubbles
+            }
+
+            // Only enforce density requirement if lines don't align at top (not just a short last column)
+            if (mergedArea > 0 && (area1 + area2) / mergedArea < minDensityReq) {
+                if (yMinDiff > characterSize * 1.5) {
+                    return false
+                }
             }
             
             if (hDist < lineWidth * maxHDistMult) {
@@ -557,14 +560,29 @@ object OwOCRMerger {
         } else {
             val vDist = verticalDistance(line1.bbox, line2.bbox) * imgH
             val lineHeight = maxOf(h1, h2)
-            if (vDist >= lineHeight * 1.5) return false
-            
-            val coord1 = line2.bbox.right * imgW
-            val coord2 = line1.bbox.right * imgW
-            if (abs(coord1 - coord2) < 1.5 * characterSize) return true
-            
-            if (config.supportCenterAlignedText && horizontalOverlap(line1.bbox, line2.bbox) > 0.9) return true
-            
+            if (vDist >= lineHeight * 2.0) return false
+
+            val isRtl = line1.isRtl || line2.isRtl
+            val startCoordDiff = if (isRtl) {
+                abs(line1.bbox.right - line2.bbox.right) * imgW
+            } else {
+                abs(line1.bbox.left - line2.bbox.left) * imgW
+            }
+            if (startCoordDiff < 3.0 * characterSize) return true
+
+            val endCoordDiff = if (isRtl) {
+                abs(line1.bbox.left - line2.bbox.left) * imgW
+            } else {
+                abs(line1.bbox.right - line2.bbox.right) * imgW
+            }
+            if (endCoordDiff < 2.0 * characterSize) return true
+
+            val center1 = (line1.bbox.left + line1.bbox.right) / 2.0 * imgW
+            val center2 = (line2.bbox.left + line2.bbox.right) / 2.0 * imgW
+            if (abs(center1 - center2) < 2.0 * characterSize) return true
+
+            if (horizontalOverlap(line1.bbox, line2.bbox) > 0.4) return true
+
             return false
         }
     }
