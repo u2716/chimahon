@@ -16,14 +16,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import chimahon.ocr.OcrHitTester
+import eu.kanade.tachiyomi.ui.reader.viewer.OcrLineGeometry
 import eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock
-import eu.kanade.tachiyomi.ui.reader.viewer.orderedLineIndices
+import eu.kanade.tachiyomi.ui.reader.viewer.extractOcrLookupString
+import eu.kanade.tachiyomi.ui.reader.viewer.hitTest
+import eu.kanade.tachiyomi.ui.reader.viewer.isLookupStartChar
+import eu.kanade.tachiyomi.ui.reader.viewer.orderedFullText
+import eu.kanade.tachiyomi.ui.reader.viewer.orderedLineStarts
+import eu.kanade.tachiyomi.ui.reader.viewer.toPxRect
 
 data class OcrSelection(
     val block: OcrTextBlock,
@@ -36,7 +44,59 @@ data class OcrSelection(
     val anchorHeight: Float,
 )
 
+/** Anchor rectangle (canvas pixels) used to position the lookup popup. */
+data class BlockAnchor(
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float,
+)
+
+fun OcrTextBlock.toAnchor(canvasWidth: Float, canvasHeight: Float): BlockAnchor = BlockAnchor(
+    x = xmin * canvasWidth,
+    y = ymin * canvasHeight,
+    width = (xmax - xmin) * canvasWidth,
+    height = (ymax - ymin) * canvasHeight,
+)
+
+/**
+ * Resolve a block tap into a lookup selection.
+ *
+ * Returns null when the tap didn't land on a lookup-start character, produced a blank
+ * lookup string, or matched the current selection (no-op). Callers own side effects.
+ */
+fun resolveOcrTap(
+    tapped: OcrTextBlock,
+    tapX: Float,
+    tapY: Float,
+    lineIndex: Int?,
+    canvasWidth: Float,
+    canvasHeight: Float,
+    currentSelection: OcrSelection?,
+): OcrSelection? {
+    val charOffset = tapped.screenLookupCharOffset(tapX, tapY, lineIndex)
+    val text = tapped.orderedFullText
+    if (charOffset !in text.indices) return null
+    if (currentSelection?.block == tapped && currentSelection.sentenceOffset == charOffset) return null
+    if (!isLookupStartChar(text[charOffset])) return null
+    val lookupString = extractOcrLookupString(text, charOffset)
+    if (lookupString.isBlank()) return null
+    val anchor = tapped.toAnchor(canvasWidth, canvasHeight)
+    return OcrSelection(
+        block = tapped,
+        lookupString = lookupString,
+        sentence = text,
+        sentenceOffset = charOffset,
+        anchorX = anchor.x,
+        anchorY = anchor.y,
+        anchorWidth = anchor.width,
+        anchorHeight = anchor.height,
+    )
+}
+
 private val borderColor = Color(0, 170, 255, 180)
+private val activeFillColor = Color.White.copy(alpha = 0.25f)
+private val inactiveFillColor = Color.White.copy(alpha = 0.10f)
 
 @Composable
 fun OcrBlockCanvas(
@@ -58,31 +118,24 @@ fun OcrBlockCanvas(
             .fillMaxSize()
             .pointerInput(blocks, boxScaleX, boxScaleY) {
                 detectTapGestures { offset ->
+                    val w = size.width.toFloat()
+                    val h = size.height.toFloat()
                     val tappedMatch = blocks
+                        .asSequence()
                         .flatMap { block ->
-                            val geometries = block.lineGeometries
-                            if (geometries != null && geometries.size == block.lines.size) {
-                                geometries.mapIndexed { lineIndex, geo -> Triple(block, lineIndex, geo) }
+                            val geos = block.lineGeometries
+                            if (geos != null && geos.size == block.lines.size) {
+                                geos.asSequence().mapIndexed { idx, geo -> Triple(block, idx, geo) }
                             } else {
-                                listOf(Triple(block, -1, null))
+                                sequenceOf(Triple(block, -1, null))
                             }
                         }
                         .filter { (block, _, geo) ->
                             if (geo != null) {
-                                val cx = (geo.xmin + geo.xmax) / 2f
-                                val cy = (geo.ymin + geo.ymax) / 2f
-                                val sw = (geo.xmax - geo.xmin).coerceAtLeast(0.001f) * boxScaleX
-                                val sh = (geo.ymax - geo.ymin).coerceAtLeast(0.001f) * boxScaleY
-                                val left = (cx - sw / 2f) * size.width
-                                val top = (cy - sh / 2f) * size.height
-                                val right = left + sw * size.width
-                                val bottom = top + sh * size.height
-                                offset.x >= left && offset.x <= right && offset.y >= top && offset.y <= bottom
+                                geo.hitTest(offset.x, offset.y, boxScaleX, boxScaleY, w, h)
                             } else {
-                                offset.x >= block.xmin * size.width &&
-                                    offset.x <= block.xmax * size.width &&
-                                    offset.y >= block.ymin * size.height &&
-                                    offset.y <= block.ymax * size.height
+                                val r = block.toPxRect(w, h)
+                                offset.x in r.left..r.right && offset.y in r.top..r.bottom
                             }
                         }
                         .minByOrNull { (_, _, geo) ->
@@ -93,8 +146,8 @@ fun OcrBlockCanvas(
                         onEmptyTap()
                     } else {
                         val (tappedBlock, lineIndex, _) = tappedMatch
-                        val tapX = (offset.x / size.width).coerceIn(0f, 1f)
-                        val tapY = (offset.y / size.height).coerceIn(0f, 1f)
+                        val tapX = (offset.x / w).coerceIn(0f, 1f)
+                        val tapY = (offset.y / h).coerceIn(0f, 1f)
                         onBlockTapped(tappedBlock, tapX, tapY, lineIndex.takeIf { it >= 0 })
                     }
                 }
@@ -102,16 +155,18 @@ fun OcrBlockCanvas(
     ) {
         blocks.forEach { block ->
             val isActive = block == activeBlock
-            val geometries = block.lineGeometries
+            val geos = block.lineGeometries
 
-            if (geometries != null && geometries.size == block.lines.size) {
-                geometries.forEachIndexed { geoIndex, geo ->
-                    drawBlockLine(block, geo, isActive, boxScaleX, boxScaleY)
+            if (geos != null && geos.size == block.lines.size) {
+                val orderedStarts = block.orderedLineStarts()
+                geos.forEachIndexed { geoIndex, geo ->
+                    drawOcrRect(geo.toPxRect(boxScaleX, boxScaleY, size.width, size.height), isActive)
                     if (isActive && activeMatchCount > 0 && selection != null) {
                         drawMatchHighlight(
                             block = block,
                             geo = geo,
                             geoIndex = geoIndex,
+                            orderedLineStart = orderedStarts?.getOrNull(geoIndex),
                             activeMatchCount = activeMatchCount,
                             activeMatchOffset = activeMatchOffset,
                             selection = selection,
@@ -122,71 +177,31 @@ fun OcrBlockCanvas(
                     }
                 }
             } else {
-                drawBlockRect(block, isActive)
+                drawOcrRect(block.toPxRect(size.width, size.height), isActive)
             }
         }
     }
 }
 
-private fun DrawScope.drawBlockLine(
-    block: OcrTextBlock,
-    geo: eu.kanade.tachiyomi.ui.reader.viewer.OcrLineGeometry,
-    isActive: Boolean,
-    boxScaleX: Float,
-    boxScaleY: Float,
-) {
-    val centerX = (geo.xmin + geo.xmax) / 2f
-    val centerY = (geo.ymin + geo.ymax) / 2f
-    val tightW = (geo.xmax - geo.xmin).coerceAtLeast(0.001f)
-    val tightH = (geo.ymax - geo.ymin).coerceAtLeast(0.001f)
-
-    val scaledW = tightW * boxScaleX
-    val scaledH = tightH * boxScaleY
-    val left = (centerX - scaledW / 2f) * size.width
-    val top = (centerY - scaledH / 2f) * size.height
-    val w = scaledW * size.width
-    val h = scaledH * size.height
-
+private fun DrawScope.drawOcrRect(rect: Rect, isActive: Boolean) {
     drawRect(
-        color = if (isActive) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.10f),
-        topLeft = Offset(left, top),
-        size = Size(w, h),
+        color = if (isActive) activeFillColor else inactiveFillColor,
+        topLeft = Offset(rect.left, rect.top),
+        size = Size(rect.width, rect.height),
     )
     drawRect(
         color = borderColor,
-        topLeft = Offset(left, top),
-        size = Size(w, h),
-        style = Stroke(width = if (isActive) 2.dp.toPx() else 1.dp.toPx()),
-    )
-}
-
-private fun DrawScope.drawBlockRect(
-    block: OcrTextBlock,
-    isActive: Boolean,
-) {
-    val blockLeft = block.xmin * size.width
-    val blockTop = block.ymin * size.height
-    val blockSize = Size(
-        width = (block.xmax - block.xmin) * size.width,
-        height = (block.ymax - block.ymin) * size.height,
-    )
-    drawRect(
-        color = if (isActive) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.10f),
-        topLeft = Offset(blockLeft, blockTop),
-        size = blockSize,
-    )
-    drawRect(
-        color = borderColor,
-        topLeft = Offset(blockLeft, blockTop),
-        size = blockSize,
+        topLeft = Offset(rect.left, rect.top),
+        size = Size(rect.width, rect.height),
         style = Stroke(width = if (isActive) 2.dp.toPx() else 1.dp.toPx()),
     )
 }
 
 private fun DrawScope.drawMatchHighlight(
     block: OcrTextBlock,
-    geo: eu.kanade.tachiyomi.ui.reader.viewer.OcrLineGeometry,
+    geo: OcrLineGeometry,
     geoIndex: Int,
+    orderedLineStart: Int?,
     activeMatchCount: Int,
     activeMatchOffset: Int,
     selection: OcrSelection,
@@ -194,59 +209,49 @@ private fun DrawScope.drawMatchHighlight(
     boxScaleY: Float,
     highlightColor: Color,
 ) {
-    val orderedIndices = block.orderedLineIndices()
-    val orderedSentence = orderedIndices.joinToString("") { block.lines[it] }
-    val lineOrder = if (selection.sentence == orderedSentence) orderedIndices else block.lines.indices.toList()
+    if (orderedLineStart == null) return
+    val lineText = block.lines.getOrNull(geoIndex) ?: return
+    val lineLen = lineText.length
+    val lineEnd = orderedLineStart + lineLen
 
-    var accumulated = 0
-    for (i in lineOrder) {
-        val lineText = block.lines[i]
-        val lineLen = lineText.length
-        val lineEnd = accumulated + lineLen
-        val absStart = selection.sentenceOffset + activeMatchOffset
-        val absEnd = absStart + activeMatchCount
-        if (absStart < lineEnd && absEnd > accumulated && i == geoIndex) {
-            val overlapL = maxOf(absStart, accumulated)
-            val overlapR = minOf(absEnd, lineEnd)
+    val absStart = selection.sentenceOffset + activeMatchOffset
+    val absEnd = absStart + activeMatchCount
+    if (absStart >= lineEnd || absEnd <= orderedLineStart) return
 
-            val offsets = getLineOffsets(lineText, block.vertical)
-            val startIndex = (overlapL - accumulated).coerceIn(0, lineLen)
-            val endIndex = (overlapR - accumulated).coerceIn(0, lineLen)
-            val startFrac = offsets[startIndex]
-            val endFrac = offsets[endIndex]
+    val overlapL = maxOf(absStart, orderedLineStart)
+    val overlapR = minOf(absEnd, lineEnd)
 
-            val lCx = (geo.xmin + geo.xmax) / 2f
-            val lCy = (geo.ymin + geo.ymax) / 2f
-            val lTw = (geo.xmax - geo.xmin).coerceAtLeast(0.001f)
-            val lTh = (geo.ymax - geo.ymin).coerceAtLeast(0.001f)
-            val lSw = lTw * boxScaleX
-            val lSh = lTh * boxScaleY
-            val lLeft = (lCx - lSw / 2f) * size.width
-            val lTop = (lCy - lSh / 2f) * size.height
-            val lW = lSw * size.width
-            val lH = lSh * size.height
+    // Per-line orientation: a horizontal line inside a vertical block (or vice versa)
+    // must be highlighted along its own reading axis, matching how taps are resolved.
+    val lineVertical = OcrHitTester.isLineVertical(
+        block.vertical, geo.xmin, geo.ymin, geo.xmax, geo.ymax,
+    )
 
-            val origW = lW / boxScaleX
-            val origH = lH / boxScaleY
-            val padX = (lW - origW) / 2f
-            val padY = (lH - origH) / 2f
+    val offsets = getLineOffsets(lineText, lineVertical)
+    val startIndex = (overlapL - orderedLineStart).coerceIn(0, lineLen)
+    val endIndex = (overlapR - orderedLineStart).coerceIn(0, lineLen)
+    val startFrac = offsets[startIndex]
+    val endFrac = offsets[endIndex]
 
-            if (block.vertical) {
-                drawRect(
-                    color = highlightColor,
-                    topLeft = Offset(lLeft, lTop + padY + origH * startFrac),
-                    size = Size(lW, origH * (endFrac - startFrac)),
-                )
-            } else {
-                drawRect(
-                    color = highlightColor,
-                    topLeft = Offset(lLeft + padX + origW * startFrac, lTop),
-                    size = Size(origW * (endFrac - startFrac), lH),
-                )
-            }
-            return
-        }
-        accumulated = lineEnd
+    val r = geo.toPxRect(boxScaleX, boxScaleY, size.width, size.height)
+    // Undo the box-scale padding so the highlight tracks the actual glyph cells.
+    val origW = r.width / boxScaleX
+    val origH = r.height / boxScaleY
+    val padX = (r.width - origW) / 2f
+    val padY = (r.height - origH) / 2f
+
+    if (lineVertical) {
+        drawRect(
+            color = highlightColor,
+            topLeft = Offset(r.left, r.top + padY + origH * startFrac),
+            size = Size(r.width, origH * (endFrac - startFrac)),
+        )
+    } else {
+        drawRect(
+            color = highlightColor,
+            topLeft = Offset(r.left + padX + origW * startFrac, r.top),
+            size = Size(origW * (endFrac - startFrac), r.height),
+        )
     }
 }
 
@@ -279,31 +284,12 @@ fun OcrStatusOverlay(
     }
 }
 
-@Composable
-fun OcrTapHint(
-    visible: Boolean,
-    hintText: String,
-    modifier: Modifier = Modifier,
-) {
-    if (!visible) return
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-        tonalElevation = 2.dp,
-    ) {
-        Text(
-            text = hintText,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
-}
-
 fun cropBitmap(bitmap: Bitmap, left: Float, top: Float, right: Float, bottom: Float): Bitmap {
-    val w = bitmap.width; val h = bitmap.height
-    val x = (left * w).toInt().coerceIn(0, w)
-    val y = (top * h).toInt().coerceIn(0, h)
+    val w = bitmap.width
+    val h = bitmap.height
+    if (w <= 0 || h <= 0) return bitmap
+    val x = (left * w).toInt().coerceIn(0, w - 1)
+    val y = (top * h).toInt().coerceIn(0, h - 1)
     val r = (right * w).toInt().coerceIn(x + 1, w)
     val b = (bottom * h).toInt().coerceIn(y + 1, h)
     return Bitmap.createBitmap(bitmap, x, y, r - x, b - y)
@@ -311,27 +297,29 @@ fun cropBitmap(bitmap: Bitmap, left: Float, top: Float, right: Float, bottom: Fl
 
 fun cropAroundAnchor(
     bitmap: Bitmap,
-    anchorX: Float, anchorY: Float,
-    anchorWidth: Float, anchorHeight: Float,
-    aspectX: Int, aspectY: Int,
+    anchorX: Float,
+    anchorY: Float,
+    anchorWidth: Float,
+    anchorHeight: Float,
+    aspectX: Int,
+    aspectY: Int,
     paddingFactor: Float = 1.5f,
 ): Bitmap {
-    val bw = bitmap.width.toFloat(); val bh = bitmap.height.toFloat()
+    val bw = bitmap.width.toFloat()
+    val bh = bitmap.height.toFloat()
     val cx = ((anchorX + anchorWidth / 2f) / bw).coerceIn(0f, 1f)
     val cy = ((anchorY + anchorHeight / 2f) / bh).coerceIn(0f, 1f)
     val textW = (anchorWidth / bw * paddingFactor).coerceAtLeast(0.01f)
     val textH = (anchorHeight / bh * paddingFactor).coerceAtLeast(0.01f)
-    // Presets are pixel-space ratios; convert to normalized space so the final
-    // PIXEL dimensions match aspectX:aspectY regardless of bitmap orientation.
     val pixelRatio = if (aspectY > 0) aspectX.toFloat() / aspectY.toFloat() else 1f
     val normRatio = pixelRatio * bh / bw
-    var cropW: Float; var cropH: Float
+    var cropW: Float
+    var cropH: Float
     if (textW / textH > normRatio) {
         cropH = textH; cropW = textH * normRatio
     } else {
         cropW = textW; cropH = textW / normRatio
     }
-    // Sensible size bounds while preserving ratio
     val minSize = 0.20f
     val maxSize = 0.80f
     if (cropW < minSize || cropH < minSize) {
@@ -342,7 +330,6 @@ fun cropAroundAnchor(
         val scale = maxSize / maxOf(cropW, cropH)
         cropW *= scale; cropH *= scale
     }
-    // Edge clamp preserving ratio (joint, not independent)
     val maxHalfW = minOf(cx, 1f - cx)
     val maxHalfH = minOf(cy, 1f - cy)
     var halfW = cropW / 2f

@@ -1,23 +1,10 @@
 package eu.kanade.tachiyomi.ui.reader.viewer
 
+import androidx.compose.ui.geometry.Rect
 import chimahon.ocr.extractOcrLookupText
 import chimahon.ocr.extractWholeWord
 import chimahon.ocr.isOcrLookupStartChar
 
-/**
- * Represents an OCR-detected text block (normalized coordinates, pre-processed offline).
- *
- * Coordinates are normalized to 0.0–1.0 relative to image dimensions.
- * This format is produced by the Chrome Lens OCR pipeline and avoids
- * dependency on original image pixel dimensions at render time.
- *
- * @param xmin normalized X coordinate of left edge (0.0–1.0)
- * @param ymin normalized Y coordinate of top edge (0.0–1.0)
- * @param xmax normalized X coordinate of right edge (0.0–1.0)
- * @param ymax normalized Y coordinate of bottom edge (0.0–1.0)
- * @param lines list of text strings (one per line within the block)
- * @param vertical true for vertical (tategumi) text, false for horizontal
- */
 data class OcrTextBlock(
     val xmin: Float,
     val ymin: Float,
@@ -29,9 +16,6 @@ data class OcrTextBlock(
     val language: String = "",
 )
 
-/**
- * Geometry for an individual line within a block.
- */
 data class OcrLineGeometry(
     val xmin: Float,
     val ymin: Float,
@@ -40,29 +24,76 @@ data class OcrLineGeometry(
     val rotation: Float = 0f,
 )
 
+// ── normalized → canvas-pixel helpers ────────────────────────────────────────
+
 /**
- * Returns the full text of the block by joining all lines.
- * Lines are concatenated without separator (correct for Japanese, no spaces between lines).
+ * Canvas-pixel rect of the line box, expanded around its center by [boxScaleX]/[boxScaleY].
+ * Shared by drawing, hit-testing, and match-highlight positioning so they never disagree.
  */
+fun OcrLineGeometry.toPxRect(
+    boxScaleX: Float,
+    boxScaleY: Float,
+    canvasWidth: Float,
+    canvasHeight: Float,
+): Rect {
+    val cx = (xmin + xmax) / 2f
+    val cy = (ymin + ymax) / 2f
+    val w = (xmax - xmin).coerceAtLeast(0.001f) * boxScaleX
+    val h = (ymax - ymin).coerceAtLeast(0.001f) * boxScaleY
+    val left = (cx - w / 2f) * canvasWidth
+    val top = (cy - h / 2f) * canvasHeight
+    return Rect(left, top, left + w * canvasWidth, top + h * canvasHeight)
+}
+
+/** Canvas-pixel rect of the whole block. Used only when a block has no line geometries. */
+fun OcrTextBlock.toPxRect(canvasWidth: Float, canvasHeight: Float): Rect =
+    Rect(
+        left = xmin * canvasWidth,
+        top = ymin * canvasHeight,
+        right = xmax * canvasWidth,
+        bottom = ymax * canvasHeight,
+    )
+
+/** True when ([tapX], [tapY]) falls inside the scaled line box. */
+fun OcrLineGeometry.hitTest(
+    tapX: Float,
+    tapY: Float,
+    boxScaleX: Float,
+    boxScaleY: Float,
+    canvasWidth: Float,
+    canvasHeight: Float,
+): Boolean {
+    val r = toPxRect(boxScaleX, boxScaleY, canvasWidth, canvasHeight)
+    return tapX >= r.left && tapX <= r.right && tapY >= r.top && tapY <= r.bottom
+}
+
+/**
+ * Ordered (reading-order) start offset in characters for each raw line index, or null when
+ * [orderedLineIndices] can't produce a consistent permutation. Precomputed once per block
+ * so the match-highlight loop doesn't recompute it per line.
+ */
+internal fun OcrTextBlock.orderedLineStarts(): IntArray? {
+    if (lines.isEmpty()) return IntArray(0)
+    val ordered = orderedLineIndices()
+    if (ordered.size != lines.size) return null
+    val starts = IntArray(lines.size)
+    var acc = 0
+    for (lineIdx in ordered) {
+        if (lineIdx !in lines.indices) return null
+        starts[lineIdx] = acc
+        acc += lines[lineIdx].length
+    }
+    return starts
+}
+
+// ── text helpers (unchanged) ─────────────────────────────────────────────────
+
 val OcrTextBlock.fullText: String
     get() = lines.joinToString("")
 
-/**
- * Returns block text in reading order derived from the line geometry.
- *
- * OCR engines can return line text in detection order, which is not always the
- * same order the OCR box is read in. Geometry lets Anki sentence export use the
- * same block ordering as the visible text box.
- */
 val OcrTextBlock.orderedFullText: String
     get() = orderedLineIndices().joinToString("") { index -> lines[index] }
 
-/**
- * Returns the full text of the block with a space separator between lines for
- * horizontal text. Used for display in the selection panel and popup sentence
- * context where words at line boundaries would otherwise be concatenated.
- * Adjacent-line word overlap from OCR boundary duplication is trimmed.
- */
 val OcrTextBlock.displayText: String
     get() {
         if (vertical) return lines.joinToString("")
@@ -73,10 +104,6 @@ val OcrTextBlock.displayText: String
         return out.joinToString(" ")
     }
 
-/**
- * Returns display text in reading order with a space separator between lines
- * for horizontal text.
- */
 val OcrTextBlock.orderedDisplayText: String
     get() {
         val indices = orderedLineIndices()
@@ -89,10 +116,6 @@ val OcrTextBlock.orderedDisplayText: String
         return out.joinToString(" ")
     }
 
-/**
- * Converts an offset based on [fullText] to the equivalent offset in
- * [orderedFullText].
- */
 fun OcrTextBlock.toOrderedOffset(rawOffset: Int): Int {
     if (lines.isEmpty()) return 0
 
@@ -153,19 +176,12 @@ internal fun extractOcrLookupString(text: String, start: Int): String {
     return extractOcrLookupText(text, start)
 }
 
-/**
- * Lookup string for the tap at [global] offset of the block. When [wholeWord]
- * is true the tap position expands to the full surrounding word, clamped so it
- * never crosses into a neighboring OCR line (block text concatenates lines
- * without a separator).
- */
 internal fun OcrTextBlock.extractLookupString(global: Int, wholeWord: Boolean): String {
     if (!wholeWord) return extractOcrLookupText(fullText, global)
     val (lineStart, lineEnd) = lineBoundariesFor(global)
     return extractWholeWord(fullText, global, lineStart, lineEnd)
 }
 
-/** [start, end) range of the line containing [offset] within [fullText]. */
 internal fun OcrTextBlock.lineBoundariesFor(offset: Int): Pair<Int, Int> {
     if (lines.isEmpty()) return 0 to 0
     var lineStart = 0
@@ -218,12 +234,6 @@ internal fun uniformCharOffset(
     return block.lines.take(lineIndex).sumOf { it.length } + charIndex
 }
 
-/**
- * Trims any leading text from [curr] that duplicates the trailing text of
- * [prev] at an OCR line boundary. Only triggers for ≥4-char matches that
- * are whole-word on both sides, avoiding false positives on short /
- * non-whitespace-delimited text (CJK).
- */
 private fun trimLineOverlap(prev: String, curr: String): String {
     val a = prev.trimEnd()
     val b = curr.trimStart()

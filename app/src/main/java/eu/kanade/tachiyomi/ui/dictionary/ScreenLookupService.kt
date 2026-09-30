@@ -71,6 +71,7 @@ class ScreenLookupService : Service() {
     @Volatile private var imageReader: ImageReader? = null
     @Volatile private var virtualDisplay: VirtualDisplay? = null
     @Volatile private var virtualDisplaySize: CaptureSize? = null
+    @Volatile private var cachedCaptureSize: CaptureSize? = null
     private var lastCaptureError: String? = null
     private var floatingButton: View? = null
     private var floatingButtonParams: WindowManager.LayoutParams? = null
@@ -87,7 +88,11 @@ class ScreenLookupService : Service() {
         override fun onDisplayAdded(displayId: Int) {}
         override fun onDisplayRemoved(displayId: Int) {}
         override fun onDisplayChanged(displayId: Int) {
-            if (displayId == Display.DEFAULT_DISPLAY) clampFloatingButton()
+            if (displayId == Display.DEFAULT_DISPLAY) {
+                // Recompute once per display change rather than on every drag frame.
+                cachedCaptureSize = null
+                clampFloatingButton()
+            }
         }
     }
     private val windowManager: WindowManager
@@ -499,7 +504,8 @@ class ScreenLookupService : Service() {
         projection = null
     }
 
-    private fun captureSize(): CaptureSize = resolveCaptureSize()
+    private fun captureSize(): CaptureSize =
+        cachedCaptureSize ?: resolveCaptureSize().also { cachedCaptureSize = it }
 
     private fun resolveCaptureSize(): CaptureSize {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -584,7 +590,6 @@ class ScreenLookupService : Service() {
         private const val NOTIFICATION_ID = 320_420
         private const val BUTTON_SIZE_DP = 56
         private const val BUTTON_ALPHA = 0.92f
-        private const val IMAGE_TIMEOUT_MS = 1_500L
         private const val HIDE_BUTTON_DELAY_MS = 250L
 
         fun start(context: Context, resultCode: Int, resultData: Intent) {
