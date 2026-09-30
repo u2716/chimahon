@@ -116,7 +116,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPopupWebViewWarmup
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
-import eu.kanade.tachiyomi.ui.dictionary.cropAroundAnchor
+import eu.kanade.tachiyomi.ui.dictionary.centerCropToAspect
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.reader.ReaderViewModel.SetAsCoverResult.AddToLibraryFirst
 import eu.kanade.tachiyomi.ui.reader.ReaderViewModel.SetAsCoverResult.Error
@@ -763,15 +763,7 @@ class ReaderActivity : BaseActivity() {
                     if (bitmap != null && profile.ankiCropMode == "full") {
                         val preset = CropPresets.aspectByKey(profile.ankiCropPreset)
                         if (preset != null) {
-                            cropAroundAnchor(
-                                bitmap = bitmap,
-                                anchorX = popupState?.anchorX ?: 0f,
-                                anchorY = popupState?.anchorY ?: 0f,
-                                anchorWidth = popupState?.anchorWidth ?: 0f,
-                                anchorHeight = popupState?.anchorHeight ?: 0f,
-                                aspectX = preset.x,
-                                aspectY = preset.y,
-                            )
+                            centerCropToAspect(bitmap, preset.x, preset.y)
                         } else {
                             bitmap
                         }
@@ -2383,13 +2375,22 @@ class ReaderActivity : BaseActivity() {
 
             val preset = (cachedActiveProfile ?: Injekt.get<DictionaryPreferences>().profileStore.getActiveProfile())
                 .let { CropPresets.aspectByKey(it.ankiCropPreset) }
+            // Mirror `centerCropToAspect`'s orientation handling so the manual cropper
+            // locks the same shape the auto crop would have produced.
+            val isPortrait = bitmap.height > bitmap.width
+            val (aspectX, aspectY) = when {
+                preset == null -> 1 to 1
+                preset.x == preset.y -> preset.x to preset.y
+                isPortrait -> preset.y to preset.x
+                else -> preset.x to preset.y
+            }
             val cropOptions = com.canhub.cropper.CropImageOptions().apply {
                 cropShape = com.canhub.cropper.CropImageView.CropShape.RECTANGLE
                 initialCropWindowPaddingRatio = 0.25f
                 if (preset != null) {
                     fixAspectRatio = true
-                    aspectRatioX = preset.x
-                    aspectRatioY = preset.y
+                    aspectRatioX = aspectX
+                    aspectRatioY = aspectY
                 } else {
                     fixAspectRatio = false
                     aspectRatioX = 1

@@ -508,34 +508,19 @@ internal fun ScreenLookupOverlay(
         val cropPresetKey = activeProfile.ankiCropPreset
         val cropPreset = CropPresets.aspectByKey(cropPresetKey)
 
-        // Compute the crop only when the selection or crop settings actually change,
-        // not on every barOffset / highlight recomposition.
-        val popupScreenshot: Bitmap? = remember(
+        // Defer the crop until the user commits an Anki card. `onRequestScreenshot` is
+        // invoked from OcrLookupPopup's performAnkiLookup, so tapping words (or looking
+        // at the popup) never allocates a crop bitmap.
+        val popupOnRequestScreenshot: (suspend () -> Bitmap?)? = remember(
             screenshot,
-            selected?.block,
-            selected?.sentenceOffset,
             cropMode,
             cropPresetKey,
         ) {
             when {
-                selected == null -> null
                 cropMode == "no_screenshot" -> null
-                cropPreset != null -> cropAroundAnchor(
-                    bitmap = screenshot,
-                    anchorX = selected.anchorX,
-                    anchorY = selected.anchorY,
-                    anchorWidth = selected.anchorWidth,
-                    anchorHeight = selected.anchorHeight,
-                    aspectX = cropPreset.x,
-                    aspectY = cropPreset.y,
-                )
-                else -> screenshot
+                cropPreset != null -> ({ centerCropToAspect(screenshot, cropPreset.x, cropPreset.y) })
+                else -> ({ screenshot })
             }
-        }
-        val popupOnRequestScreenshot: (() -> Bitmap?)? = when {
-            cropMode == "no_screenshot" -> null
-            popupScreenshot != null -> ({ popupScreenshot })
-            else -> null
         }
 
         if (selected != null) {
@@ -556,7 +541,7 @@ internal fun ScreenLookupOverlay(
                     activeProfile = activeProfile,
                     type = type,
                     mediaInfo = mediaInfo,
-                    screenshot = popupScreenshot,
+                    screenshot = null,
                     onRequestScreenshot = popupOnRequestScreenshot,
                     onRequestSentenceAudio = onRequestSentenceAudio,
                     usePopup = false,

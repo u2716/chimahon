@@ -284,69 +284,61 @@ fun OcrStatusOverlay(
     }
 }
 
-fun cropBitmap(bitmap: Bitmap, left: Float, top: Float, right: Float, bottom: Float): Bitmap {
-    val w = bitmap.width
-    val h = bitmap.height
-    if (w <= 0 || h <= 0) return bitmap
-    val x = (left * w).toInt().coerceIn(0, w - 1)
-    val y = (top * h).toInt().coerceIn(0, h - 1)
-    val r = (right * w).toInt().coerceIn(x + 1, w)
-    val b = (bottom * h).toInt().coerceIn(y + 1, h)
-    return Bitmap.createBitmap(bitmap, x, y, r - x, b - y)
-}
+/**
+ * Crops [bitmap] to the largest rectangle matching the given aspect ratio that fits
+ * inside it, and centers the crop. Nothing is scaled or padded — the result touches
+ * the bitmap's edges on the non-cropped axis.
+ *
+ * The preset is interpreted in the screenshot's native orientation: a landscape bitmap
+ * uses [aspectX]:[aspectY] as-is; a portrait bitmap uses the rotated form
+ * [aspectY]:[aspectX] so a "16:9" preset on a tall screenshot yields a 9:16 crop.
+ * Square presets (`aspectX == aspectY`) are orientation-agnostic.
+ *
+ * Examples:
+ *  - 1080x2400 + 16:9 → 1080x1920 (240 px trimmed from top and bottom)
+ *  - 2400x1080 + 16:9 → 1920x1080 (240 px trimmed from left and right)
+ *  - 1080x2400 + 1:1  → 1080x1080 (660 px trimmed from top and bottom)
+ *
+ * The tapped word is not consulted; the crop is always centered. A tap that lands in
+ * the trimmed strip will not appear in the resulting image.
+ */
+fun centerCropToAspect(bitmap: Bitmap, aspectX: Int, aspectY: Int): Bitmap {
+    if (aspectX <= 0 || aspectY <= 0) return bitmap
+    val bw = bitmap.width
+    val bh = bitmap.height
+    if (bw <= 0 || bh <= 0) return bitmap
 
-fun cropAroundAnchor(
-    bitmap: Bitmap,
-    anchorX: Float,
-    anchorY: Float,
-    anchorWidth: Float,
-    anchorHeight: Float,
-    aspectX: Int,
-    aspectY: Int,
-    paddingFactor: Float = 1.5f,
-): Bitmap {
-    val bw = bitmap.width.toFloat()
-    val bh = bitmap.height.toFloat()
-    val cx = ((anchorX + anchorWidth / 2f) / bw).coerceIn(0f, 1f)
-    val cy = ((anchorY + anchorHeight / 2f) / bh).coerceIn(0f, 1f)
-    val textW = (anchorWidth / bw * paddingFactor).coerceAtLeast(0.01f)
-    val textH = (anchorHeight / bh * paddingFactor).coerceAtLeast(0.01f)
-    val pixelRatio = if (aspectY > 0) aspectX.toFloat() / aspectY.toFloat() else 1f
-    val normRatio = pixelRatio * bh / bw
-    var cropW: Float
-    var cropH: Float
-    if (textW / textH > normRatio) {
-        cropH = textH; cropW = textH * normRatio
+    // Portrait screenshots get the rotated form of the preset.
+    val targetX: Int
+    val targetY: Int
+    if (aspectX == aspectY) {
+        targetX = aspectX
+        targetY = aspectY
+    } else if (bh > bw) {
+        targetX = aspectY
+        targetY = aspectX
     } else {
-        cropW = textW; cropH = textW / normRatio
+        targetX = aspectX
+        targetY = aspectY
     }
-    val minSize = 0.20f
-    val maxSize = 0.80f
-    if (cropW < minSize || cropH < minSize) {
-        val scale = minSize / minOf(cropW, cropH).coerceAtLeast(0.001f)
-        cropW *= scale; cropH *= scale
+
+    // Cross-multiply (Long to avoid overflow on huge bitmaps) to decide which axis trims.
+    val bitmapIsWiderThanTarget = bw.toLong() * targetY > bh.toLong() * targetX
+
+    val cropW: Int
+    val cropH: Int
+    if (bitmapIsWiderThanTarget) {
+        // Trim width, keep full height.
+        cropH = bh
+        cropW = (bh.toLong() * targetX / targetY).toInt().coerceAtMost(bw)
+    } else {
+        // Trim height, keep full width.
+        cropW = bw
+        cropH = (bw.toLong() * targetY / targetX).toInt().coerceAtMost(bh)
     }
-    if (cropW > maxSize || cropH > maxSize) {
-        val scale = maxSize / maxOf(cropW, cropH)
-        cropW *= scale; cropH *= scale
-    }
-    val maxHalfW = minOf(cx, 1f - cx)
-    val maxHalfH = minOf(cy, 1f - cy)
-    var halfW = cropW / 2f
-    var halfH = cropH / 2f
-    if (halfW > maxHalfW) {
-        halfW = maxHalfW
-        halfH = halfW / normRatio
-    }
-    if (halfH > maxHalfH) {
-        halfH = maxHalfH
-        halfW = halfH * normRatio
-    }
-    halfW = halfW.coerceAtMost(maxHalfW)
-    halfH = halfH.coerceAtMost(maxHalfH)
-    val left = (cx - halfW).coerceAtLeast(0f)
-    val top = (cy - halfH).coerceAtLeast(0f)
-    val right = (cx + halfW).coerceAtMost(1f)
-    val bottom = (cy + halfH).coerceAtMost(1f)
-    return cropBitmap(bitmap, left, top, right, bottom)
+
+    if (cropW == bw && cropH == bh) return bitmap
+    val left = (bw - cropW) / 2
+    val top = (bh - cropH) / 2
+    return Bitmap.createBitmap(bitmap, left, top, cropW, cropH)
 }
