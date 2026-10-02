@@ -641,7 +641,7 @@ private fun ScreenLookupControls(
                 }
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .width(100.dp)
                         .height(14.dp)
                         .pointerInput(Unit) {
                             detectDragGesturesAfterLongPress(
@@ -655,7 +655,7 @@ private fun ScreenLookupControls(
                 ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.55f)
+                            .width(34.dp)
                             .height(3.dp)
                             .background(Color.White.copy(alpha = 0.5f), RoundedCornerShape(1.5.dp)),
                     )

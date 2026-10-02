@@ -343,7 +343,7 @@ class DictionaryPreferences(
 
     fun geminiPrompt() = preferenceStore.getString("pref_gemini_prompt", GeminiConfig.DEFAULT_PROMPT)
 
-    fun geminiModel() = preferenceStore.getString("pref_gemini_model", GeminiConfig.MODEL_FLASH_LATEST)
+    fun geminiModel() = preferenceStore.getString("pref_gemini_model", GeminiConfig.MODEL_FLASH_LITE_LATEST)
 
     fun geminiCustomEndpoint() = preferenceStore.getString("pref_gemini_custom_endpoint", "")
 }

@@ -61,8 +61,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
@@ -79,8 +77,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import chimahon.HoshiDicts
@@ -98,7 +94,6 @@ import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.ProgressListener
 import eu.kanade.tachiyomi.data.dictionary.DictionaryUpdateJob
-import eu.kanade.tachiyomi.data.gemini.GeminiConfig
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
 import eu.kanade.tachiyomi.ui.dictionary.getDictionaryTitle
 import eu.kanade.tachiyomi.ui.dictionary.invalidateDictionaryTitle
@@ -522,7 +517,6 @@ object SettingsDictionaryScreen : SearchableSettings {
             getDictionaryListGroup(importLauncher),
             getDictionaryUpdatesGroup(),
             getWordAudioGroup(pickDb),
-            getGeminiGroup(),
         )
     }
 
@@ -2759,144 +2753,6 @@ object SettingsDictionaryScreen : SearchableSettings {
         return markerRegex.findAll(fieldValue).map { it.groupValues[1] }.toList()
     }
 
-    @Composable
-    private fun getGeminiGroup(): Preference.PreferenceGroup {
-        val prefs = remember { Injekt.get<DictionaryPreferences>() }
-        val geminiModel by prefs.geminiModel().collectAsState()
-
-        return Preference.PreferenceGroup(
-            title = stringResource(MR.strings.pref_gemini),
-            preferenceItems = persistentListOf(
-                Preference.PreferenceItem.CustomPreference(
-                    title = stringResource(MR.strings.pref_gemini_api_key),
-                    content = {
-                        var isDialogShown by remember { mutableStateOf(false) }
-                        val keyPref = prefs.geminiApiKey()
-                        val key by keyPref.collectAsState()
-
-                        TextPreferenceWidget(
-                            title = stringResource(MR.strings.pref_gemini_api_key),
-                            subtitle = if (key.isBlank()) {
-                                stringResource(MR.strings.pref_gemini_api_key_summary)
-                            } else {
-                                stringResource(MR.strings.pref_gemini_api_key_masked)
-                            },
-                            onPreferenceClick = { isDialogShown = true },
-                        )
-
-                        if (isDialogShown) {
-                            var text by remember { mutableStateOf(key) }
-                            AlertDialog(
-                                onDismissRequest = { isDialogShown = false },
-                                title = { Text(stringResource(MR.strings.pref_gemini_api_key)) },
-                                text = {
-                                    OutlinedTextField(
-                                        value = text,
-                                        onValueChange = { text = it },
-                                        visualTransformation = PasswordVisualTransformation(),
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                        modifier = Modifier.fillMaxWidth(),
-                                        singleLine = true,
-                                    )
-                                },
-                                confirmButton = {
-                                    TextButton(
-                                        onClick = {
-                                            keyPref.set(text.trim())
-                                            isDialogShown = false
-                                        },
-                                    ) {
-                                        Text(stringResource(MR.strings.action_ok))
-                                    }
-                                },
-                                dismissButton = {
-                                    TextButton(onClick = { isDialogShown = false }) {
-                                        Text(stringResource(MR.strings.action_cancel))
-                                    }
-                                },
-                            )
-                        }
-                    },
-                ),
-                Preference.PreferenceItem.CustomPreference(
-                    title = stringResource(MR.strings.pref_gemini_prompt),
-                    content = {
-                        var isDialogShown by remember { mutableStateOf(false) }
-                        val promptPref = prefs.geminiPrompt()
-                        val prompt by promptPref.collectAsState()
-
-                        TextPreferenceWidget(
-                            title = stringResource(MR.strings.pref_gemini_prompt),
-                            subtitle = stringResource(MR.strings.pref_gemini_prompt_summary),
-                            onPreferenceClick = { isDialogShown = true },
-                        )
-
-                        if (isDialogShown) {
-                            var text by remember { mutableStateOf(prompt) }
-                            AlertDialog(
-                                onDismissRequest = { isDialogShown = false },
-                                title = { Text(stringResource(MR.strings.pref_gemini_prompt)) },
-                                text = {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(max = 350.dp)
-                                            .verticalScroll(rememberScrollState()),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        OutlinedTextField(
-                                            value = text,
-                                            onValueChange = { text = it },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            placeholder = { Text(stringResource(MR.strings.pref_gemini_prompt_placeholder)) },
-                                            minLines = 6,
-                                        )
-                                    }
-                                },
-                                confirmButton = {
-                                    TextButton(
-                                        onClick = {
-                                            promptPref.set(text)
-                                            isDialogShown = false
-                                        },
-                                    ) {
-                                        Text(stringResource(MR.strings.action_ok))
-                                    }
-                                },
-                                dismissButton = {
-                                    TextButton(onClick = { isDialogShown = false }) {
-                                        Text(stringResource(MR.strings.action_cancel))
-                                    }
-                                },
-                            )
-                        }
-                    },
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = prefs.geminiSendScreenshot(),
-                    title = stringResource(MR.strings.pref_gemini_send_screenshot),
-                    subtitle = stringResource(MR.strings.pref_gemini_send_screenshot_summary),
-                ),
-                Preference.PreferenceItem.ListPreference(
-                    preference = prefs.geminiModel(),
-                    title = stringResource(MR.strings.pref_gemini_model),
-                    entries = mapOf(
-                        GeminiConfig.MODEL_FLASH_LATEST to stringResource(MR.strings.pref_gemini_model_flash),
-                        GeminiConfig.MODEL_FLASH_LITE_LATEST to stringResource(MR.strings.pref_gemini_model_flash_lite),
-                        GeminiConfig.MODEL_GEMMA_2B to stringResource(MR.strings.pref_gemini_model_gemma_2b),
-                        GeminiConfig.MODEL_GEMMA_7B to stringResource(MR.strings.pref_gemini_model_gemma_7b),
-                        GeminiConfig.MODEL_CUSTOM to stringResource(MR.strings.pref_gemini_model_custom),
-                    ).toPersistentMap(),
-                ),
-                Preference.PreferenceItem.EditTextPreference(
-                    preference = prefs.geminiCustomEndpoint(),
-                    title = stringResource(MR.strings.pref_gemini_custom_endpoint),
-                    subtitle = stringResource(MR.strings.pref_gemini_custom_endpoint_summary),
-                    enabled = geminiModel == GeminiConfig.MODEL_CUSTOM,
-                ),
-            ),
-        )
-    }
 }
 
 private suspend fun importDictionaryFromStream(

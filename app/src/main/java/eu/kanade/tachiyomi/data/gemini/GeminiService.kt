@@ -74,6 +74,7 @@ class GeminiService(
         text: String?,
         screenshot: Bitmap?,
         forceText: Boolean = false,
+        forceScreenshot: Boolean = false,
     ): Flow<String> = flow {
         val apiKey = preferences.geminiApiKey().get().trim()
         if (apiKey.isBlank()) {
@@ -93,13 +94,22 @@ class GeminiService(
             cleanedText
         }
 
-        val useScreenshot = !forceText && sendScreenshot
+        // Precedence: forceText > forceScreenshot > sendScreenshot pref.
+        // The pref is only respected when neither force flag is set, so
+        // the manga/novel readers always send their bitmap and the video
+        // player always sends text, regardless of the global toggle.
+        val wantScreenshot = when {
+            forceText -> false
+            forceScreenshot -> true
+            else -> sendScreenshot
+        }
+        val useScreenshot = wantScreenshot && screenshot != null
         if (!useScreenshot && truncatedText.isBlank()) {
             throw IllegalArgumentException("NO_INPUT")
         }
 
         val partsArray = JSONArray()
-        if (useScreenshot && screenshot != null) {
+        if (useScreenshot) {
             partsArray.put(JSONObject().apply { put("text", prompt) })
             val stream = ByteArrayOutputStream()
             screenshot.compress(Bitmap.CompressFormat.JPEG, 85, stream)

@@ -1523,7 +1523,7 @@ class ReaderActivity : BaseActivity() {
                         if (bitmap == null) {
                             toast(MR.strings.decode_image_error)
                         } else {
-                            geminiState.analyze(geminiScope, screenshot = bitmap)
+                            geminiState.analyze(geminiScope, screenshot = bitmap, forceScreenshot = true)
                         }
                     }
                 }

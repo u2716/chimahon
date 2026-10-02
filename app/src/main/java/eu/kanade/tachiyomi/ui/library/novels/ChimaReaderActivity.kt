@@ -454,7 +454,7 @@ class ChimaReaderActivity : NovelReaderActivity() {
             android.widget.Toast.makeText(this, "Could not capture page", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        geminiStateHolder?.analyze(lifecycleScope, screenshot = bitmap)
+        geminiStateHolder?.analyze(lifecycleScope, screenshot = bitmap, forceScreenshot = true)
     }
 
     private fun captureWebViewBitmap(webView: android.webkit.WebView): Bitmap? {

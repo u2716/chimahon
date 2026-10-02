@@ -5,10 +5,10 @@ object GeminiConfig {
     const val STREAM_ENDPOINT_SUFFIX = ":streamGenerateContent"
     const val HEADER_API_KEY = "x-goog-api-key"
 
-    const val MODEL_FLASH_LATEST = "gemini-flash-latest"
     const val MODEL_FLASH_LITE_LATEST = "gemini-flash-lite-latest"
-    const val MODEL_GEMMA_2B = "gemma-2b-it"
-    const val MODEL_GEMMA_7B = "gemma-7b-it"
+    const val MODEL_FLASH_LATEST = "gemini-flash-latest"
+    const val MODEL_GEMMA_4_26B = "gemma-4-26b-a4b-it"
+    const val MODEL_GEMMA_4_31B = "gemma-4-31b-it"
     const val MODEL_CUSTOM = "custom"
 
     const val MAX_OCR_TEXT_CHARS = 12000
@@ -17,6 +17,6 @@ object GeminiConfig {
         You are an expert Japanese linguist.
         Translate the following Japanese text to English.
         Then, provide a detailed breakdown of the grammar, identifying particles, verb conjugations, and any idiomatic expressions.
-        Format your response clearly with a 'Translation' section and a 'Grammar Explanation' section.
+        Format your response clearly with a 'Source Text' section, a 'Translation' section and a 'Grammar Explanation' section.
     """.trimIndent()
 }

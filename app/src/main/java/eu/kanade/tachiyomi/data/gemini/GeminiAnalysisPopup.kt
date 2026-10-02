@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.data.gemini
 
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -93,8 +92,7 @@ fun GeminiAnalysisPopup(
         Surface(
             modifier = Modifier
                 .widthIn(max = panelMaxWidth)
-                .heightIn(max = panelMaxHeight)
-                .animateContentSize()
+                .heightIn(min = 160.dp, max = panelMaxHeight)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -164,7 +162,18 @@ fun GeminiAnalysisPopup(
 
                 if (content.isNotEmpty()) {
                     SelectionContainer {
-                        MarkdownRender(content = content, modifier = Modifier.fillMaxWidth())
+                        if (state.loading) {
+                            // While streaming, render plain text. Re-parsing
+                            // markdown on every chunk causes the whole body to
+                            // briefly blank out and the popup to jitter.
+                            Text(
+                                text = content,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            MarkdownRender(content = content, modifier = Modifier.fillMaxWidth())
+                        }
                     }
                 }
 

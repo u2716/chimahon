@@ -36,6 +36,7 @@ class GeminiAnalysisState internal constructor(
     private var lastText: String? = null
     private var lastScreenshot: Bitmap? = null
     private var lastForceText: Boolean = false
+    private var lastForceScreenshot: Boolean = false
     private var generation: Int = 0
 
     fun analyze(
@@ -43,10 +44,12 @@ class GeminiAnalysisState internal constructor(
         text: String? = null,
         screenshot: Bitmap? = null,
         forceText: Boolean = false,
+        forceScreenshot: Boolean = false,
     ) {
         lastText = text
         lastScreenshot = screenshot
         lastForceText = forceText
+        lastForceScreenshot = forceScreenshot
         start(scope)
     }
 
@@ -66,7 +69,7 @@ class GeminiAnalysisState internal constructor(
         val myGeneration = ++generation
         job = scope.launch {
             try {
-                service.streamAnalysis(lastText, lastScreenshot, lastForceText).collect { delta ->
+                service.streamAnalysis(lastText, lastScreenshot, lastForceText, lastForceScreenshot).collect { delta ->
                     if (generation == myGeneration) content += delta
                 }
                 if (generation == myGeneration) loading = false
