@@ -116,7 +116,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPopupWebViewWarmup
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
-import eu.kanade.tachiyomi.ui.dictionary.cropAroundAnchor
+import eu.kanade.tachiyomi.ui.dictionary.centerCropToAspect
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.reader.ReaderViewModel.SetAsCoverResult.AddToLibraryFirst
 import eu.kanade.tachiyomi.ui.reader.ReaderViewModel.SetAsCoverResult.Error
@@ -763,15 +763,7 @@ class ReaderActivity : BaseActivity() {
                     if (bitmap != null && profile.ankiCropMode == "full") {
                         val preset = CropPresets.aspectByKey(profile.ankiCropPreset)
                         if (preset != null) {
-                            cropAroundAnchor(
-                                bitmap = bitmap,
-                                anchorX = popupState?.anchorX ?: 0f,
-                                anchorY = popupState?.anchorY ?: 0f,
-                                anchorWidth = popupState?.anchorWidth ?: 0f,
-                                anchorHeight = popupState?.anchorHeight ?: 0f,
-                                aspectX = preset.x,
-                                aspectY = preset.y,
-                            )
+                            centerCropToAspect(bitmap, preset.x, preset.y)
                         } else {
                             bitmap
                         }
@@ -2381,20 +2373,14 @@ class ReaderActivity : BaseActivity() {
                 file,
             )
 
-            val preset = (cachedActiveProfile ?: Injekt.get<DictionaryPreferences>().profileStore.getActiveProfile())
-                .let { CropPresets.aspectByKey(it.ankiCropPreset) }
             val cropOptions = com.canhub.cropper.CropImageOptions().apply {
                 cropShape = com.canhub.cropper.CropImageView.CropShape.RECTANGLE
                 initialCropWindowPaddingRatio = 0.25f
-                if (preset != null) {
-                    fixAspectRatio = true
-                    aspectRatioX = preset.x
-                    aspectRatioY = preset.y
-                } else {
-                    fixAspectRatio = false
-                    aspectRatioX = 1
-                    aspectRatioY = 1
-                }
+                // Crop Overlay is always free-form — the crop preset only applies to
+                // Screenshot mode, where the image is cropped automatically.
+                fixAspectRatio = false
+                aspectRatioX = 1
+                aspectRatioY = 1
                 outputCompressQuality = 70
                 outputCompressFormat = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     android.graphics.Bitmap.CompressFormat.WEBP_LOSSY
