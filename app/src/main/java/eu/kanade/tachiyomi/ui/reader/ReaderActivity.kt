@@ -2373,29 +2373,14 @@ class ReaderActivity : BaseActivity() {
                 file,
             )
 
-            val preset = (cachedActiveProfile ?: Injekt.get<DictionaryPreferences>().profileStore.getActiveProfile())
-                .let { CropPresets.aspectByKey(it.ankiCropPreset) }
-            // Mirror `centerCropToAspect`'s orientation handling so the manual cropper
-            // locks the same shape the auto crop would have produced.
-            val isPortrait = bitmap.height > bitmap.width
-            val (aspectX, aspectY) = when {
-                preset == null -> 1 to 1
-                preset.x == preset.y -> preset.x to preset.y
-                isPortrait -> preset.y to preset.x
-                else -> preset.x to preset.y
-            }
             val cropOptions = com.canhub.cropper.CropImageOptions().apply {
                 cropShape = com.canhub.cropper.CropImageView.CropShape.RECTANGLE
                 initialCropWindowPaddingRatio = 0.25f
-                if (preset != null) {
-                    fixAspectRatio = true
-                    aspectRatioX = aspectX
-                    aspectRatioY = aspectY
-                } else {
-                    fixAspectRatio = false
-                    aspectRatioX = 1
-                    aspectRatioY = 1
-                }
+                // Crop Overlay is always free-form — the crop preset only applies to
+                // Screenshot mode, where the image is cropped automatically.
+                fixAspectRatio = false
+                aspectRatioX = 1
+                aspectRatioY = 1
                 outputCompressQuality = 70
                 outputCompressFormat = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     android.graphics.Bitmap.CompressFormat.WEBP_LOSSY
