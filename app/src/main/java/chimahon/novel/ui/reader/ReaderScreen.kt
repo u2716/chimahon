@@ -71,6 +71,8 @@ fun ReaderScreen(
     onSelectionRectsReceived: ((String) -> Unit)? = null,
     recognizeImage: suspend (Bitmap, OcrLanguage) -> List<OcrResult> = { _, _ -> emptyList() },
     onImageOcrLookupRequested: (String, String, Int, Float, Float, Float, Float, Boolean, Bitmap) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
+    onWebViewCreated: (android.webkit.WebView) -> Unit = {},
+    onGeminiClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
 
@@ -377,6 +379,7 @@ fun ReaderScreen(
                         },
                         onScrollMoved = { if (viewModel.einkRefreshOnScroll) einkRefreshHost.triggerScroll() },
                         onImageTapped = { uri -> tappedImageUri = uri },
+                        onWebViewCreated = onWebViewCreated,
                     )
 
                     if (viewModel.einkRefreshOnPageTurn || viewModel.einkRefreshOnScroll) {
@@ -465,6 +468,7 @@ fun ReaderScreen(
                     onOpenChapters = { activeSheet = ActiveSheet.Chapters },
                     onOpenAppearance = { activeSheet = ActiveSheet.Appearance },
                     onOpenStatistics = { activeSheet = ActiveSheet.Statistics },
+                    onOpenGemini = onGeminiClick,
                 )
             }
         }
@@ -575,6 +579,7 @@ private fun ReaderBottomBar(
     onOpenChapters: () -> Unit,
     onOpenAppearance: () -> Unit,
     onOpenStatistics: () -> Unit,
+    onOpenGemini: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -616,6 +621,15 @@ private fun ReaderBottomBar(
                     contentDescription = "Statistics",
                     tint = Color(contentColor)
                 )
+            }
+            if (onOpenGemini != null) {
+                IconButton(onClick = onOpenGemini) {
+                    Icon(
+                        Icons.Outlined.AutoAwesome,
+                        contentDescription = "Analyze with Gemini",
+                        tint = Color(contentColor)
+                    )
+                }
             }
         }
     }

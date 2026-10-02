@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Smartphone
@@ -49,6 +50,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +80,8 @@ import chimahon.DictionaryRepository
 import chimahon.MediaInfo
 import chimahon.ocr.CropPresets
 import chimahon.ocr.OcrLanguage
+import eu.kanade.tachiyomi.data.gemini.GeminiAnalysisPopup
+import eu.kanade.tachiyomi.data.gemini.rememberGeminiAnalysisState
 import eu.kanade.tachiyomi.data.ocr.ModelDownloader
 import eu.kanade.tachiyomi.data.ocr.OcrEngineType
 import eu.kanade.tachiyomi.data.ocr.recognizePage
@@ -361,6 +365,22 @@ internal fun ScreenLookupOverlay(
     var selection by remember { mutableStateOf<OcrSelection?>(null) }
     var lookupNonce by remember { mutableIntStateOf(0) }
 
+    val geminiState = rememberGeminiAnalysisState()
+    val geminiScope = rememberCoroutineScope()
+
+    fun getExtractedText(): String {
+        return blocks
+            .sortedWith(compareBy({ it.ymin }, { it.xmin }))
+            .map { it.orderedDisplayText.ifBlank { it.orderedFullText }.ifBlank { it.fullText } }
+            .filter { it.isNotBlank() }
+            .joinToString("\n\n")
+    }
+
+    fun analyzeWithGemini() {
+        selection = null
+        geminiState.analyze(geminiScope, text = getExtractedText(), screenshot = screenshot)
+    }
+
     SideEffect {
         onBack?.invoke {
             if (isDropdownOpen) {
@@ -442,12 +462,10 @@ internal fun ScreenLookupOverlay(
                     blocks = emptyList()
                 }
             },
+            onGemini = { analyzeWithGemini() },
+            geminiLoading = geminiState.loading,
             onCopy = {
-                val allText = blocks
-                    .sortedWith(compareBy({ it.ymin }, { it.xmin }))
-                    .map { it.orderedDisplayText.ifBlank { it.orderedFullText }.ifBlank { it.fullText } }
-                    .filter { it.isNotBlank() }
-                    .joinToString("\n\n")
+                val allText = getExtractedText()
                 if (allText.isNotBlank()) {
                     context.copyToClipboard("OCR", allText)
                 } else {
@@ -501,6 +519,11 @@ internal fun ScreenLookupOverlay(
             error = error,
             loadingText = stringResource(MR.strings.screen_lookup_finding_text),
             modifier = Modifier.align(Alignment.Center),
+        )
+
+        GeminiAnalysisPopup(
+            state = geminiState,
+            onCopy = { if (it.isNotBlank()) context.copyToClipboard("Gemini", it) },
         )
 
         val selected = selection
@@ -562,6 +585,8 @@ private fun ScreenLookupControls(
     isDropdownOpen: Boolean,
     onToggleDropdown: () -> Unit,
     onSelectOcrEngine: (OcrEngineType) -> Unit,
+    onGemini: () -> Unit,
+    geminiLoading: Boolean,
     onCopy: () -> Unit,
     onDrag: (Offset) -> Unit,
     modifier: Modifier = Modifier,
@@ -593,6 +618,17 @@ private fun ScreenLookupControls(
                         )
                     }
                     IconButton(
+                        onClick = onGemini,
+                        enabled = !geminiLoading,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AutoAwesome,
+                            contentDescription = stringResource(MR.strings.gemini_action_analyze),
+                            tint = if (geminiLoading) Color.White.copy(alpha = 0.4f) else Color.White,
+                        )
+                    }
+                    IconButton(
                         onClick = onCopy,
                         modifier = Modifier.size(40.dp),
                     ) {
@@ -605,7 +641,7 @@ private fun ScreenLookupControls(
                 }
                 Box(
                     modifier = Modifier
-                        .width(80.dp)
+                        .fillMaxWidth()
                         .height(14.dp)
                         .pointerInput(Unit) {
                             detectDragGesturesAfterLongPress(
@@ -619,7 +655,7 @@ private fun ScreenLookupControls(
                 ) {
                     Box(
                         modifier = Modifier
-                            .width(26.dp)
+                            .fillMaxWidth(0.55f)
                             .height(3.dp)
                             .background(Color.White.copy(alpha = 0.5f), RoundedCornerShape(1.5.dp)),
                     )

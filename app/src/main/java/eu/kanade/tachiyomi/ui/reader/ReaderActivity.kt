@@ -60,6 +60,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,6 +115,8 @@ import eu.kanade.tachiyomi.databinding.ReaderActivityBinding
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
+import eu.kanade.tachiyomi.data.gemini.GeminiAnalysisPopup
+import eu.kanade.tachiyomi.data.gemini.rememberGeminiAnalysisState
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPopupWebViewWarmup
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
 import eu.kanade.tachiyomi.ui.dictionary.centerCropToAspect
@@ -149,6 +152,7 @@ import eu.kanade.tachiyomi.ui.reader.viewer.pager.VerticalPagerViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonPageHolder
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
+import eu.kanade.tachiyomi.util.system.copyToClipboard
 import eu.kanade.tachiyomi.util.system.isNightMode
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toShareIntent
@@ -505,6 +509,10 @@ class ReaderActivity : BaseActivity() {
                 )
             }
 
+            val geminiState = rememberGeminiAnalysisState()
+            val geminiScope = rememberCoroutineScope()
+            val geminiClipboardContext = LocalContext.current
+
             Box(modifier = Modifier.fillMaxSize()) {
                 if (!state.menuVisible && showPageNumber) {
                     ReaderPageIndicator(
@@ -520,7 +528,11 @@ class ReaderActivity : BaseActivity() {
 
                 ContentOverlay(state = state)
 
-                AppBars(state = state)
+                AppBars(
+                    state = state,
+                    geminiState = geminiState,
+                    geminiScope = geminiScope,
+                )
 
                 OcrProgressHud(
                     visible = state.menuVisible,
@@ -710,6 +722,11 @@ class ReaderActivity : BaseActivity() {
                 // SY <--
                 null -> {}
             }
+
+            GeminiAnalysisPopup(
+                state = geminiState,
+                onCopy = { if (it.isNotBlank()) geminiClipboardContext.copyToClipboard("Gemini", it) },
+            )
         }
 
         BackHandler(enabled = ocrPopupVisible) {
@@ -1402,7 +1419,11 @@ class ReaderActivity : BaseActivity() {
     }
 
     @Composable
-    fun AppBars(state: ReaderViewModel.State) {
+    fun AppBars(
+        state: ReaderViewModel.State,
+        geminiState: eu.kanade.tachiyomi.data.gemini.GeminiAnalysisState,
+        geminiScope: kotlinx.coroutines.CoroutineScope,
+    ) {
         if (!ifSourcesLoaded()) {
             return
         }
@@ -1493,6 +1514,20 @@ class ReaderActivity : BaseActivity() {
             mokuroAvailable = viewModel.isMokuroAvailable(),
             onToggleOcr = ::toggleOcrFromReader,
             onSelectOcrSource = ::selectOcrSourceFromReader,
+            onGemini = {
+                if (!geminiState.loading) {
+                    geminiScope.launch {
+                        val bitmap = withContext(Dispatchers.IO) {
+                            viewModel.getCurrentPageBitmap()
+                        }
+                        if (bitmap == null) {
+                            toast(MR.strings.decode_image_error)
+                        } else {
+                            geminiState.analyze(geminiScope, screenshot = bitmap)
+                        }
+                    }
+                }
+            },
             onClickSettings = viewModel::openSettingsDialog,
             onClickMangaStats = viewModel::openMangaStatsSheet,
             // SY -->
