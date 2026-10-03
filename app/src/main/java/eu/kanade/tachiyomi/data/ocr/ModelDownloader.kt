@@ -25,7 +25,7 @@ class ModelDownloader(
 ) {
     companion object {
         private const val RELEASE_BASE =
-            "https://github.com/Chimahon/chimahon-local-models/releases/download/v2.5"
+            "https://github.com/u2716/chimahon-local-models/releases/download/v2.0"
         private const val LENS_ZIP = "models.zip"
         private const val PADDLE_ZIP = "paddle-ocr.zip"
         private const val PADDLE_DIR = "paddle_ocr"
