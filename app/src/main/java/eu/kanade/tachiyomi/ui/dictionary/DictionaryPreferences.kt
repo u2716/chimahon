@@ -4,6 +4,7 @@ import chimahon.anki.AnkiProfile
 import chimahon.anki.AnkiProfileStore
 import chimahon.audio.WordAudioPreferences
 import chimahon.dictionary.ko.KoreanParserMode
+import eu.kanade.tachiyomi.data.gemini.GeminiConfig
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.getEnum
@@ -331,4 +332,23 @@ class DictionaryPreferences(
     override fun wordAudioLocalUri() = preferenceStore.getString("pref_word_audio_local_uri", "")
 
     override fun wordAudioLocalEnabled() = preferenceStore.getBoolean("pref_word_audio_local_enabled", false)
+
+    // -------------------------------------------------------------------------
+    // Gemini settings
+    // -------------------------------------------------------------------------
+
+    // Private: excluded from backups unless the user enables
+    // "Include sensitive settings". See PreferenceBackupCreator.withPrivatePreferences.
+    fun geminiApiKey() = preferenceStore.getString(
+        tachiyomi.core.common.preference.Preference.privateKey("pref_gemini_api_key"),
+        "",
+    )
+
+    fun geminiSendScreenshot() = preferenceStore.getBoolean("pref_gemini_send_screenshot", false)
+
+    fun geminiPrompt() = preferenceStore.getString("pref_gemini_prompt", GeminiConfig.DEFAULT_PROMPT)
+
+    fun geminiModel() = preferenceStore.getString("pref_gemini_model", GeminiConfig.MODEL_FLASH_LITE_LATEST)
+
+    fun geminiCustomEndpoint() = preferenceStore.getString("pref_gemini_custom_endpoint", "")
 }

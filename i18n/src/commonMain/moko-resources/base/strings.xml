@@ -1820,4 +1820,35 @@
     <string name="extensionRepo_settings">Extension repo</string>
     <string name="pref_disable_long_press_screenshot">Disable long-press screenshot</string>
     <string name="pref_single_tap_to_pause">Single tap to pause</string>
+
+    <!-- Gemini -->
+    <string name="pref_gemini">Gemini Analysis</string>
+    <string name="pref_gemini_api_key">Gemini API Key</string>
+    <string name="pref_gemini_api_key_summary">Enter your Gemini API key</string>
+    <string name="pref_gemini_api_key_masked">••••••••••••••••</string>
+    <string name="pref_gemini_prompt">Analysis Prompt</string>
+    <string name="pref_gemini_prompt_summary">Prompt used for analysis</string>
+    <string name="pref_gemini_prompt_placeholder">Enter Gemini prompt…</string>
+    <string name="pref_gemini_send_screenshot">Send screenshot to Gemini</string>
+    <string name="pref_gemini_send_screenshot_summary">Screen Lookup: send captured image instead of OCR\'d text</string>
+    <string name="pref_gemini_model">Gemini Model</string>
+    <string name="pref_gemini_model_flash">Latest Flash</string>
+    <string name="pref_gemini_model_flash_lite">Latest Flash Lite</string>
+    <string name="pref_gemini_model_gemma_4_26b">Gemma 4 26B A4B</string>
+    <string name="pref_gemini_model_gemma_4_31b">Gemma 4 31B</string>
+    <string name="pref_gemini_model_custom">Custom Endpoint</string>
+    <string name="pref_gemini_custom_endpoint">Custom Endpoint</string>
+    <string name="pref_gemini_custom_endpoint_summary">Enter a custom Gemini-compatible endpoint</string>
+    <string name="gemini_analysis_title">Gemini Analysis</string>
+    <string name="gemini_error_no_api_key">Gemini API key is not set in Settings</string>
+    <string name="gemini_error_custom_endpoint_blank">Custom endpoint URL cannot be blank</string>
+    <string name="gemini_error_custom_endpoint_invalid">Custom endpoint must be a valid HTTPS URL</string>
+    <string name="gemini_error_no_input">No text or image found to analyze</string>
+    <string name="gemini_error_http">Error %1$d: %2$s</string>
+    <string name="gemini_error_generic">Error: %1$s</string>
+    <string name="gemini_action_analyze">Analyze with Gemini</string>
+    <string name="gemini_action_retry">Retry</string>
+    <string name="gemini_action_copy">Copy</string>
+    <string name="pref_category_translation">Translation</string>
+    <string name="pref_translation_summary">Gemini</string>
 </resources>

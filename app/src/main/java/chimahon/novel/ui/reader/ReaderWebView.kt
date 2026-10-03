@@ -56,6 +56,7 @@ fun ReaderWebView(
     onPageTurned: () -> Unit = {},
     onScrollMoved: () -> Unit = {},
     onImageTapped: (imageUrl: String) -> Unit = {},
+    onWebViewCreated: (android.webkit.WebView) -> Unit = {},
 ) {
     val pendingCommands = remember(bridge) { bridge.pendingCommands }
 
@@ -117,6 +118,7 @@ fun ReaderWebView(
                 onScrollMoved = onScrollMoved,
                 onImageTappedCallback = onImageTapped,
             ).apply {
+                onWebViewCreated(this)
                 setSelectionRectsCallback(onSelectionRectsReceived)
                 settings.allowFileAccess = true
                 settings.allowContentAccess = true

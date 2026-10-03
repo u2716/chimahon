@@ -173,6 +173,12 @@ open class NovelReaderActivity : ComponentActivity() {
     /** Override to receive selection rects from JS for native highlight overlay. */
     protected open fun getSelectionRectsCallback(): ((String) -> Unit)? = null
 
+    /** Override to receive the reader WebView once it is created. */
+    protected open fun onReaderWebViewCreated(webView: android.webkit.WebView) = Unit
+
+    /** Override to react to the Gemini button in the bottom HUD. */
+    protected open fun onGeminiRequested() = Unit
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -245,6 +251,8 @@ open class NovelReaderActivity : ComponentActivity() {
                     onImageOcrLookupRequested = { word, sentence, sentenceOffset, x, y, w, h, vertical, bitmap ->
                         onImageOcrLookupRequested(word, sentence, sentenceOffset, x, y, w, h, vertical, bitmap)
                     },
+                    onWebViewCreated = { webView -> onReaderWebViewCreated(webView) },
+                    onGeminiClick = { onGeminiRequested() },
                 )
                 PopupOverlay()
             }

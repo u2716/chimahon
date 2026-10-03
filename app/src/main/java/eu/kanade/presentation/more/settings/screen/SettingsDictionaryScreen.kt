@@ -2752,6 +2752,7 @@ object SettingsDictionaryScreen : SearchableSettings {
         val markerRegex = Regex("""\{([a-zA-Z0-9-]+)\}""")
         return markerRegex.findAll(fieldValue).map { it.groupValues[1] }.toList()
     }
+
 }
 
 private suspend fun importDictionaryFromStream(

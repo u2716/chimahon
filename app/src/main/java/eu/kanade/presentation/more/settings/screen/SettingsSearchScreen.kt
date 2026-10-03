@@ -369,6 +369,7 @@ private val settingScreens = listOf(
     SettingsDictionaryScreen,
     SettingsDictionaryPopupScreen,
     SettingsAnkiScreen,
+    SettingsTranslationScreen,
     SettingsDataScreen,
     SettingsSecurityScreen,
     // SY -->

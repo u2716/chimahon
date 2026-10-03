@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Subtitles
@@ -42,6 +43,9 @@ fun TopRightPlayerControls(
     // auto-play
     autoPlayEnabled: Boolean,
     onToggleAutoPlay: (Boolean) -> Unit,
+
+    // gemini
+    onGeminiClick: () -> Unit,
 
     // subtitles
     onSubtitlesClick: () -> Unit,
@@ -77,6 +81,11 @@ fun TopRightPlayerControls(
             modifier = Modifier
                 .padding(vertical = MaterialTheme.padding.medium, horizontal = MaterialTheme.padding.mediumSmall)
                 .size(width = 48.dp, height = 24.dp),
+        )
+        ControlsButton(
+            icon = Icons.Outlined.AutoAwesome,
+            onClick = onGeminiClick,
+            horizontalSpacing = MaterialTheme.padding.mediumSmall,
         )
         if (isCastEnabled()) {
             CastButton(

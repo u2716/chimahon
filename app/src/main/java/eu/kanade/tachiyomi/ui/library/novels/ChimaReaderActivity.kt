@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.library.novels
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
@@ -17,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -37,6 +39,8 @@ import chimahon.DictionaryRepository
 import chimahon.ocr.OcrLanguage
 import chimahon.ocr.OcrResult
 import chimahon.novel.ui.reader.NovelReaderActivity
+import eu.kanade.tachiyomi.data.gemini.GeminiAnalysisPopup
+import eu.kanade.tachiyomi.data.gemini.rememberGeminiAnalysisState
 import eu.kanade.tachiyomi.data.ocr.recognizePage
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPopupWebViewWarmup
 import eu.kanade.tachiyomi.ui.dictionary.DictionaryPreferences
@@ -63,6 +67,8 @@ class ChimaReaderActivity : NovelReaderActivity() {
 
     private val readerPreferences: eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences by uy.kohesive.injekt.injectLazy()
     private var popupWebView: WebView? = null
+    private var readerWebViewRef: WebView? = null
+    private var geminiStateHolder: eu.kanade.tachiyomi.data.gemini.GeminiAnalysisState? = null
     private val novelReaderSettings by lazy { chimahon.novel.data.NovelReaderSettings(this, getSettingsNamespace()) }
 
     private var cachedActiveProfile: chimahon.anki.AnkiProfile? = null
@@ -419,6 +425,10 @@ class ChimaReaderActivity : NovelReaderActivity() {
         }
     }
 
+    override fun onReaderWebViewCreated(webView: android.webkit.WebView) {
+        readerWebViewRef = webView
+    }
+
     /** Legacy bridge hook; current reader JS sends the sentence with onLookupRequested. */
     override fun onSentenceReady(sentence: String) {
         val current = lookupState ?: return
@@ -434,6 +444,27 @@ class ChimaReaderActivity : NovelReaderActivity() {
         pendingLookupRects.clear()
         cancelActiveLookup()
         isPopupActive = false
+    }
+
+    override fun onGeminiRequested() {
+        if (geminiStateHolder?.loading == true) return
+        val webView = readerWebViewRef
+        val bitmap = webView?.let { captureWebViewBitmap(it) }
+        if (bitmap == null) {
+            android.widget.Toast.makeText(this, "Could not capture page", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        geminiStateHolder?.analyze(lifecycleScope, screenshot = bitmap, forceScreenshot = true)
+    }
+
+    private fun captureWebViewBitmap(webView: android.webkit.WebView): Bitmap? {
+        if (webView.width <= 0 || webView.height <= 0) return null
+        return runCatching {
+            val bitmap = Bitmap.createBitmap(webView.width, webView.height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            webView.draw(canvas)
+            bitmap
+        }.getOrNull()
     }
 
     private fun cancelActiveLookup() {
@@ -525,6 +556,16 @@ class ChimaReaderActivity : NovelReaderActivity() {
                     titleId = bookMetadata?.id,
                 )
             }
+
+            val geminiState = rememberGeminiAnalysisState()
+            LaunchedEffect(Unit) { geminiStateHolder = geminiState }
+            GeminiAnalysisPopup(
+                state = geminiState,
+                onCopy = { if (it.isNotBlank()) {
+                    val cm = getSystemService(android.content.ClipboardManager::class.java)
+                    cm?.setPrimaryClip(android.content.ClipData.newPlainText("Gemini", it))
+                } },
+            )
         }
     }
 

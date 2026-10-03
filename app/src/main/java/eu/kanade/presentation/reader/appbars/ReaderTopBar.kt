@@ -4,10 +4,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
@@ -51,6 +53,7 @@ fun ReaderTopBar(
     mokuroAvailable: Boolean = false,
     onToggleOcr: (() -> Unit)? = null,
     onSelectOcrSource: (ReaderOcrSource) -> Unit = {},
+    onGemini: (() -> Unit)? = null,
 ) {
     AppBar(
         modifier = modifier,
@@ -68,6 +71,14 @@ fun ReaderTopBar(
                     onToggleOcr = it,
                     onSelectSource = onSelectOcrSource,
                 )
+            }
+            onGemini?.let {
+                IconButton(onClick = it) {
+                    Icon(
+                        imageVector = Icons.Outlined.AutoAwesome,
+                        contentDescription = stringResource(MR.strings.gemini_action_analyze),
+                    )
+                }
             }
             AppBarActions(
                 actions = persistentListOf<AppBar.AppBarAction>().builder()

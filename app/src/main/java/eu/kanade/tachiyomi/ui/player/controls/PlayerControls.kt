@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -107,11 +108,14 @@ import eu.kanade.tachiyomi.ui.player.controls.components.sheets.toFixed
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
 import eu.kanade.tachiyomi.ui.player.settings.GesturePreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
+import eu.kanade.tachiyomi.data.gemini.GeminiAnalysisPopup
+import eu.kanade.tachiyomi.data.gemini.rememberGeminiAnalysisState
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
 import eu.kanade.tachiyomi.ui.player.utils.SubtitleFontResolver
 import eu.kanade.tachiyomi.ui.reader.viewer.extractOcrLookupString
 import eu.kanade.tachiyomi.ui.reader.viewer.isLookupStartChar
 import eu.kanade.tachiyomi.util.system.toast
+import eu.kanade.tachiyomi.util.system.copyToClipboard
 import `is`.xyz.mpv.MPVLib
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.delay
@@ -143,6 +147,9 @@ fun PlayerControls(
     val audioPreferences = remember { Injekt.get<AudioPreferences>() }
     val subtitlePreferences = remember { Injekt.get<SubtitlePreferences>() }
     val interactionSource = remember { MutableInteractionSource() }
+    val geminiState = rememberGeminiAnalysisState()
+    val geminiScope = rememberCoroutineScope()
+    val geminiClipboardContext = LocalContext.current
     val controlsShown by viewModel.controlsShown.collectAsState()
     val areControlsLocked by viewModel.areControlsLocked.collectAsState()
     val seekBarShown by viewModel.seekBarShown.collectAsState()
@@ -607,6 +614,37 @@ fun PlayerControls(
                     TopRightPlayerControls(
                         autoPlayEnabled = autoPlayEnabled,
                         onToggleAutoPlay = { viewModel.setAutoPlay(it) },
+                        onGeminiClick = {
+                            if (!geminiState.loading) {
+                                // mpv's sub-text: whatever subtitle is currently
+                                // rendered on screen — the currently selected track
+                                // (any index, or a manually loaded external .srt/.ass).
+                                // Secondary track (secondary-sid) is intentionally ignored.
+                                val currentLine = viewModel.currentSubtitleText.value?.trim().orEmpty()
+                                if (currentLine.isBlank()) {
+                                    geminiClipboardContext.toast("No subtitle on screen")
+                                } else {
+                                    val cues = viewModel.subtitleHistory.value
+                                    val activePos = cues.indexOfFirst {
+                                        it.index == viewModel.activeSubtitleCueIndex.value
+                                    }
+                                    val priorLines = if (activePos > 0) {
+                                        cues.subList(
+                                            maxOf(0, activePos - 2),
+                                            activePos,
+                                        ).map { it.text.trim() }.filter { it.isNotBlank() }
+                                    } else {
+                                        emptyList()
+                                    }
+                                    val combined = (priorLines + currentLine).joinToString("\n")
+                                    geminiState.analyze(
+                                        geminiScope,
+                                        text = combined,
+                                        forceText = true,
+                                    )
+                                }
+                            }
+                        },
                         onSubtitlesClick = { viewModel.showSheet(Sheets.SubtitleTracks) },
                         onSubtitlesLongClick = { viewModel.showPanel(Panels.SubtitleSettings) },
                         onAudioClick = { viewModel.showSheet(Sheets.AudioTracks) },
@@ -838,6 +876,11 @@ fun PlayerControls(
             viewModel = viewModel,
             screenshot = ocrScreenshot,
             onDismiss = dismissVideoOcr,
+        )
+
+        GeminiAnalysisPopup(
+            state = geminiState,
+            onCopy = { if (it.isNotBlank()) geminiClipboardContext.copyToClipboard("Gemini", it) },
         )
     }
 
