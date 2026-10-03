@@ -52,12 +52,33 @@ class ModelDownloader(
     private fun requiredLensFiles(abi: String): List<File> {
         val root = File(context.filesDir, "screenai_models")
         return listOf(
+            // Runner / engine
             File(root, "lots_multiscript_v8_runner.binarypb"),
             File(root, "lots_multiscript_v8_engine_patched.binarypb"),
-            File(root, "gocr/gocr_models/gocr_line_recognition_omni_mobile_chrome_multiscript_2024_q4.binarypb"),
-            File(root, "gocr/gocr_models/detection/gocr_group_rpn_text_detection_config_2024_q4_chrome.binarypb"),
-            File(root, "gocr/gocr_models/line_recognition_mobile_convnext320_omni/hanijpan.tflite"),
-            File(root, "aksara/aksara_page_layout_analysis_rpn_gro_2024_q4.binarypb"),
+
+            // Line-recognition selector
+            File(root, "third_party/lens/line_recognition/v678672708/line_recognition_tflite.binarypb"),
+
+            // New convnext320-omni recognizers — spot-check several to detect truncated zips
+            File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/hanijpan.tflite"),
+            File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/arab.tflite"),
+            File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/kore.tflite"),
+            File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/gocr_mobile_und.tflite"),
+            File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/arab_fst_config.pb"),
+            File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/jpan_fst_config.pb"),
+
+            // Line detector
+            File(root, "third_party/lens/line_detector/v688492737/gocr_group_rpn_text_detection_config_2024_q4.binarypb"),
+            File(root, "third_party/lens/line_detector/v688492737/gocr_group_rpn_text_detection_model_2024_q4.tflite"),
+
+            // Layout
+            File(root, "third_party/lens/layout_analysis/v607610364/aksara_page_layout_analysis_rpn_gro_2024_q4.binarypb"),
+
+            // Script detector
+            File(root, "third_party/lens/script_detector/v541645965/gocr_script_dir_style_identification_tflite_multi_head_multiscript_v3.binarypb"),
+            File(root, "third_party/lens/script_detector/v541645965/gocr_script_dir_style_identification_convnext_multi_head.tflite"),
+
+            // Native libs
             File(root, "lib/$abi/liblens_ondevice_engine_base.so"),
             File(root, "lib/$abi/liblens_ondevice_engine_play_ml.so"),
         )
