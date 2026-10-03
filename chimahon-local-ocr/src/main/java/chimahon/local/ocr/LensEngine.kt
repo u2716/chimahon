@@ -113,9 +113,11 @@ class LensEngine(private val context: Context) : chimahon.ocr.OcrEngine {
         File(root, "lots_multiscript_v8_runner.binarypb"),
         File(root, "lots_multiscript_v8_runner_patched.binarypb"),
         File(root, "lots_multiscript_v8_engine_patched.binarypb"),
-        File(root, "third_party/lens/line_detector/v688492737/gocr_group_rpn_text_detection_config_2024_q4.binarypb"),
-        File(root, "third_party/lens/line_recognition/v678672708/recognizer_jpan.tflite"),
-        File(root, "third_party/lens/line_recognition/v678672708/recognizer_jpan_lm.compact_fst.gz"),
+        File(root, "gocr/gocr_models/gocr_line_recognition_omni_mobile_chrome_multiscript_2024_q4.binarypb"),
+        File(root, "gocr/gocr_models/detection/gocr_group_rpn_text_detection_config_2024_q4_chrome.binarypb"),
+        File(root, "aksara/aksara_page_layout_analysis_rpn_gro_2024_q4.binarypb"),
+        File(root, "third_party/lens/script_detector/v541645965/gocr_script_dir_style_identification_tflite_multi_head_multiscript_v3.binarypb"),
+        File(root, "third_party/lens/script_detector/v541645965/gocr_script_dir_style_identification_convnext_multi_head.tflite"),
     )
 
     private fun assetsArePrepared(root: File, version: String): Boolean {
