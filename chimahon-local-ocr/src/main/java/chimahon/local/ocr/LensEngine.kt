@@ -106,16 +106,49 @@ class LensEngine(private val context: Context) : chimahon.ocr.OcrEngine {
     private fun assetVersion(): String {
         val runner = File(assetRoot, "lots_multiscript_v8_runner.binarypb")
         val runnerLen = if (runner.isFile) runner.length() else -1L
-        return "lens-assets-v5|runner=$runnerLen"
+
+        // Fingerprint the line-recognition selector so a model swap forces
+        // a re-prepare even when the runner itself is unchanged.
+        val selector = File(
+            assetRoot,
+            "third_party/lens/line_recognition/v678672708/line_recognition_tflite.binarypb",
+        )
+        val selectorLen = if (selector.isFile) selector.length() else -1L
+        val selectorMtime = if (selector.isFile) selector.lastModified() else 0L
+
+        return "lens-assets-v6|runner=$runnerLen|sel=$selectorLen|selm=$selectorMtime"
     }
 
     private fun requiredPreparedFiles(root: File): List<File> = listOf(
+        // Runner / engine
         File(root, "lots_multiscript_v8_runner.binarypb"),
         File(root, "lots_multiscript_v8_runner_patched.binarypb"),
         File(root, "lots_multiscript_v8_engine_patched.binarypb"),
+
+        // Line-recognition selector (line_recognition_tflite.binarypb)
+        File(root, "third_party/lens/line_recognition/v678672708/line_recognition_tflite.binarypb"),
+
+        // New convnext320-omni recognizers — spot-check several
+        File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/hanijpan.tflite"),
+        File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/arab.tflite"),
+        File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/kore.tflite"),
+        File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/gocr_mobile_und.tflite"),
+        File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/arab_fst_config.pb"),
+        File(root, "third_party/lens/line_recognition/v678672708/line_recognition_mobile_convnext320_omni/jpan_fst_config.pb"),
+
+        // Line detector
         File(root, "third_party/lens/line_detector/v688492737/gocr_group_rpn_text_detection_config_2024_q4.binarypb"),
-        File(root, "third_party/lens/line_recognition/v678672708/recognizer_jpan.tflite"),
-        File(root, "third_party/lens/line_recognition/v678672708/recognizer_jpan_lm.compact_fst.gz"),
+        File(root, "third_party/lens/line_detector/v688492737/gocr_group_rpn_text_detection_model_2024_q4.tflite"),
+
+        // Page layout
+        File(root, "third_party/lens/layout_analysis/v607610364/aksara_page_layout_analysis_rpn_gro_2024_q4.binarypb"),
+
+        // Script detector
+        File(root, "third_party/lens/script_detector/v541645965/gocr_script_dir_style_identification_tflite_multi_head_multiscript_v3.binarypb"),
+        File(root, "third_party/lens/script_detector/v541645965/gocr_script_dir_style_identification_convnext_multi_head.tflite"),
+
+        // Line selection
+        File(root, "third_party/lens/line_selection/v480826343/line_selection_tflite.binarypb"),
     )
 
     private fun assetsArePrepared(root: File, version: String): Boolean {
