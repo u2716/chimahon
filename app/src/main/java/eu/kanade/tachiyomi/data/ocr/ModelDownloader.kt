@@ -25,7 +25,7 @@ class ModelDownloader(
 ) {
     companion object {
         private const val RELEASE_BASE =
-            "https://github.com/Chimahon/chimahon-local-models/releases/download/v2.5"
+            "https://github.com/u2716/chimahon-local-models/releases/download/v2.0"
         private const val LENS_ZIP = "models.zip"
         private const val PADDLE_ZIP = "paddle-ocr.zip"
         private const val PADDLE_DIR = "paddle_ocr"
@@ -54,9 +54,10 @@ class ModelDownloader(
         return listOf(
             File(root, "lots_multiscript_v8_runner.binarypb"),
             File(root, "lots_multiscript_v8_engine_patched.binarypb"),
-            File(root, "third_party/lens/line_detector/v688492737/gocr_group_rpn_text_detection_config_2024_q4.binarypb"),
-            File(root, "third_party/lens/line_recognition/v678672708/recognizer_jpan.tflite"),
-            File(root, "third_party/lens/line_recognition/v678672708/recognizer_jpan_lm.compact_fst.gz"),
+            File(root, "gocr/gocr_models/gocr_line_recognition_omni_mobile_chrome_multiscript_2024_q4.binarypb"),
+            File(root, "gocr/gocr_models/detection/gocr_group_rpn_text_detection_config_2024_q4_chrome.binarypb"),
+            File(root, "gocr/gocr_models/line_recognition_mobile_convnext320_omni/hanijpan.tflite"),
+            File(root, "aksara/aksara_page_layout_analysis_rpn_gro_2024_q4.binarypb"),
             File(root, "lib/$abi/liblens_ondevice_engine_base.so"),
             File(root, "lib/$abi/liblens_ondevice_engine_play_ml.so"),
         )
