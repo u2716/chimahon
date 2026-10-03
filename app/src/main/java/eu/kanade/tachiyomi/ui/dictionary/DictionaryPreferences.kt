@@ -337,7 +337,12 @@ class DictionaryPreferences(
     // Gemini settings
     // -------------------------------------------------------------------------
 
-    fun geminiApiKey() = preferenceStore.getString("pref_gemini_api_key", "")
+    // Private: excluded from backups unless the user enables
+    // "Include sensitive settings". See PreferenceBackupCreator.withPrivatePreferences.
+    fun geminiApiKey() = preferenceStore.getString(
+        tachiyomi.core.common.preference.Preference.privateKey("pref_gemini_api_key"),
+        "",
+    )
 
     fun geminiSendScreenshot() = preferenceStore.getBoolean("pref_gemini_send_screenshot", false)
 

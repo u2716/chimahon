@@ -1850,5 +1850,5 @@
     <string name="gemini_action_retry">Retry</string>
     <string name="gemini_action_copy">Copy</string>
     <string name="pref_category_translation">Translation</string>
-    <string name="pref_translation_summary">Gemini analysis settings</string>
+    <string name="pref_translation_summary">Gemini</string>
 </resources>

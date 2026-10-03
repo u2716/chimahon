@@ -16,7 +16,7 @@ object GeminiConfig {
     val DEFAULT_PROMPT = """
         You are an expert Japanese linguist.
         Translate the following Japanese text to English.
-        Then, provide a detailed breakdown of the grammar, identifying particles, verb conjugations, and any idiomatic expressions.
+        Then, provide a detailed breakdown of the grammar pointing out any idiomatic expressions or cultural references.
         Format your response clearly with a 'Source Text' section, a 'Translation' section and a 'Grammar Explanation' section.
     """.trimIndent()
 }
