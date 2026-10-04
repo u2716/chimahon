@@ -36,6 +36,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.data.download.MokuroSidecarCopier
 import eu.kanade.tachiyomi.data.ocr.LocalOcrBridge
+import eu.kanade.tachiyomi.data.ocr.MeikiOcrBridge
 import eu.kanade.tachiyomi.data.ocr.PaddleOcrBridge
 import eu.kanade.tachiyomi.data.ocr.ModelDownloader
 import eu.kanade.tachiyomi.data.panel.PanelModelDownloader
@@ -334,6 +335,7 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { LensClient() }
         addSingletonFactory { LocalOcrBridge(app) }
         addSingletonFactory { PaddleOcrBridge(app) }
+        addSingletonFactory { MeikiOcrBridge(app) }
         addSingletonFactory { ModelDownloader(app, get<NetworkHelper>().client) }
         addSingletonFactory { OcrStore(app) }
         addSingletonFactory { OcrCacheManager(app, get()) }
