@@ -16,7 +16,6 @@ import java.io.Closeable
 import java.io.File
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
-import kotlin.jvm.optionals.getOrNull
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -259,20 +258,21 @@ class MeikiOcrEngine(context: Context) : chimahon.ocr.OcrEngine, Closeable {
                 // Python: `_, boxes, scores = session.run(...)`
                 val boxesT = r.get(1) as OnnxTensor
                 val scoresT = r.get(2) as OnnxTensor
-                val boxesBuf = boxesT.floatBuffer.getOrNull() ?: return emptyList()
-                val scoresBuf = scoresT.floatBuffer.getOrNull() ?: return emptyList()
-                val n = scoresBuf.limit()
+                val boxesFlat = tensorToFloats(boxesT) ?: return emptyList()
+                val scoresFlat = tensorToFloats(scoresT) ?: return emptyList()
+                val n = scoresFlat.size
+                if (boxesFlat.size < n * 4) return emptyList()
                 val out = ArrayList<DetBox>(n)
                 val maxX = wOrig.toFloat()
                 val maxY = hOrig.toFloat()
                 for (i in 0 until n) {
-                    val conf = scoresBuf.get(i)
+                    val conf = scoresFlat[i]
                     if (conf < DET_CONF_THRESHOLD) continue
                     val b = i * 4
-                    val x1 = boxesBuf.get(b).coerceIn(0f, maxX).toInt()
-                    val y1 = boxesBuf.get(b + 1).coerceIn(0f, maxY).toInt()
-                    val x2 = boxesBuf.get(b + 2).coerceIn(0f, maxX).toInt()
-                    val y2 = boxesBuf.get(b + 3).coerceIn(0f, maxY).toInt()
+                    val x1 = boxesFlat[b].coerceIn(0f, maxX).toInt()
+                    val y1 = boxesFlat[b + 1].coerceIn(0f, maxY).toInt()
+                    val x2 = boxesFlat[b + 2].coerceIn(0f, maxX).toInt()
+                    val y2 = boxesFlat[b + 3].coerceIn(0f, maxY).toInt()
                     if (x2 > x1 && y2 > y1) out += DetBox(x1, y1, x2, y2, conf)
                 }
                 out.sortBy { it.y1 }
@@ -443,27 +443,95 @@ class MeikiOcrEngine(context: Context) : chimahon.ocr.OcrEngine, Closeable {
         boxesT: OnnxTensor,
         scoresT: OnnxTensor,
     ): RecOutput {
-        val scoresBuf = scoresT.floatBuffer.getOrNull() ?: return RecOutput(0, IntArray(0), FloatArray(0), FloatArray(0))
-        val n = scoresBuf.limit()
+        val scoresFlat = tensorToFloats(scoresT)
+            ?: return RecOutput(0, IntArray(0), FloatArray(0), FloatArray(0))
+        val boxesFlat = tensorToFloats(boxesT)
+            ?: return RecOutput(0, IntArray(0), FloatArray(0), FloatArray(0))
+        val labelsFlat = tensorToInts(labelsT)
+            ?: return RecOutput(0, IntArray(0), FloatArray(0), FloatArray(0))
+        return RecOutput(scoresFlat.size, labelsFlat, boxesFlat, scoresFlat)
+    }
 
-        val labels = IntArray(n)
-        val longBuf = labelsT.longBuffer.getOrNull()
-        val intBuf = labelsT.intBuffer.getOrNull()
-        val floatBuf = labelsT.floatBuffer.getOrNull()
-        when {
-            longBuf != null -> for (i in 0 until n) labels[i] = longBuf.get(i).toInt()
-            intBuf != null -> for (i in 0 until n) labels[i] = intBuf.get(i)
-            floatBuf != null -> for (i in 0 until n) labels[i] = floatBuf.get(i).toInt()
+    // ---- ONNX Runtime tensor readers ----
+    //
+    // getValue() returns the tensor contents as nested Java primitive arrays
+    // matching the tensor shape (FLOAT [1,N,4] -> float[][][], INT64 [1,N] ->
+    // long[][]). It is stable across ONNX Runtime versions, unlike the
+    // getFloatBuffer()/getLongBuffer()/getIntBuffer() accessors whose return
+    // type changed in 1.30.0 and broke Kotlin interop. We flatten the nested
+    // arrays into contiguous 1D arrays.
+
+    private fun tensorToFloats(t: OnnxTensor): FloatArray? = try {
+        collectFloats(t.value)
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun collectFloats(v: Any?): FloatArray? = when (v) {
+        null -> null
+        is FloatArray -> v
+        is java.nio.FloatBuffer -> {
+            val dup = v.duplicate()
+            val out = FloatArray(dup.remaining())
+            dup.get(out)
+            out
         }
+        is Array<*> -> {
+            val pieces = ArrayList<FloatArray>(v.size)
+            var total = 0
+            for (item in v) {
+                val sub = collectFloats(item) ?: return null
+                pieces += sub
+                total += sub.size
+            }
+            val out = FloatArray(total)
+            var pos = 0
+            for (p in pieces) {
+                System.arraycopy(p, 0, out, pos, p.size)
+                pos += p.size
+            }
+            out
+        }
+        else -> null
+    }
 
-        val boxesBuf = boxesT.floatBuffer.getOrNull() ?: return RecOutput(n, labels, FloatArray(n * 4), FloatArray(n))
-        val boxes = FloatArray(n * 4)
-        for (i in 0 until n * 4) boxes[i] = boxesBuf.get(i)
+    private fun tensorToInts(t: OnnxTensor): IntArray? = try {
+        collectInts(t.value)
+    } catch (_: Throwable) {
+        null
+    }
 
-        val scores = FloatArray(n)
-        for (i in 0 until n) scores[i] = scoresBuf.get(i)
-
-        return RecOutput(n, labels, boxes, scores)
+    private fun collectInts(v: Any?): IntArray? = when (v) {
+        null -> null
+        is IntArray -> v
+        is LongArray -> {
+            val out = IntArray(v.size)
+            for (i in v.indices) out[i] = v[i].toInt()
+            out
+        }
+        is FloatArray -> {
+            val out = IntArray(v.size)
+            for (i in v.indices) out[i] = v[i].toInt()
+            out
+        }
+        is Array<*> -> {
+            val pieces = ArrayList<IntArray>(v.size)
+            var total = 0
+            for (item in v) {
+                val sub = collectInts(item) ?: return null
+                pieces += sub
+                total += sub.size
+            }
+            val out = IntArray(total)
+            var pos = 0
+            for (p in pieces) {
+                System.arraycopy(p, 0, out, pos, p.size)
+                pos += p.size
+            }
+            out
+        }
+        is Number -> intArrayOf(v.toInt())
+        else -> null
     }
 
     // ────────────────────────── per-group processing ──────────────────────────
