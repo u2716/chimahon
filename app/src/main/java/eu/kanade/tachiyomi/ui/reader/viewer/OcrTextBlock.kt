@@ -155,11 +155,54 @@ internal fun OcrTextBlock.orderedLineIndices(): List<Int> {
                 .thenBy { geometries[it].ymin },
         )
     } else {
-        lines.indices.sortedWith(
-            compareBy<Int> { geometries[it].centerY }
-                .thenBy { geometries[it].xmin },
-        )
+        orderedLineIndicesHorizontal(geometries)
     }
+}
+
+/**
+ * Horizontal reading order: cluster lines into rows by y-tolerance, then sort
+ * within each row by xmin. A naive compareBy(centerY).thenBy(xmin) fails when
+ * two lines on the same visual row have slightly different y-centers — the
+ * nonzero y-difference locks the sort and the xmin tiebreaker is never used,
+ * producing arbitrary order for side-by-side fragments of a wrapped line.
+ */
+private fun orderedLineIndicesHorizontal(
+    geometries: List<OcrLineGeometry>,
+): List<Int> {
+    if (geometries.isEmpty()) return emptyList()
+
+    val indicesByY = geometries.indices.sortedBy { geometries[it].centerY }
+    val rows = ArrayList<List<Int>>()
+    var currentRow = ArrayList<Int>()
+    var rowCenterY = 0f
+    var rowHeight = 0f
+
+    for (i in indicesByY) {
+        val geo = geometries[i]
+        val cy = geo.centerY
+        val h = geo.ymax - geo.ymin
+        if (currentRow.isEmpty()) {
+            currentRow.add(i)
+            rowCenterY = cy
+            rowHeight = h
+        } else {
+            val tolerance = 0.5f * maxOf(rowHeight, h)
+            if (kotlin.math.abs(cy - rowCenterY) < tolerance) {
+                currentRow.add(i)
+                rowHeight = maxOf(rowHeight, h)
+                rowCenterY = (rowCenterY + cy) / 2f
+            } else {
+                rows.add(currentRow)
+                currentRow = ArrayList<Int>()
+                currentRow.add(i)
+                rowCenterY = cy
+                rowHeight = h
+            }
+        }
+    }
+    if (currentRow.isNotEmpty()) rows.add(currentRow)
+
+    return rows.flatMap { row -> row.sortedBy { geometries[it].xmin } }
 }
 
 private val OcrLineGeometry.centerX: Float
