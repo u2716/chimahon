@@ -33,6 +33,12 @@ class ReaderOcrSourceTest {
         assertFalse(ReaderOcrSource.LOCAL.usesMokuro)
         assertFalse(ReaderOcrSource.LOCAL.usesPersistentCache)
         assertEquals(OcrEngineType.LOCAL, ReaderOcrSource.LOCAL.recognitionEngine)
+
+        assertFalse(ReaderOcrSource.MEIKI.usesMokuro)
+        assertFalse(ReaderOcrSource.MEIKI.usesPersistentCache)
+        assertEquals(OcrEngineType.MEIKI, ReaderOcrSource.MEIKI.recognitionEngine)
+        assertEquals("meiki", ReaderOcrSource.MEIKI.persistentCacheVariant)
+        assertTrue(ReaderOcrSource.MEIKI.persistsOcrResults)
     }
 
     @Test

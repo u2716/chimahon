@@ -35,6 +35,12 @@ enum class ReaderOcrSource(
         persistentCacheVariant = "paddle",
         recognitionEngine = OcrEngineType.PADDLE,
     ),
+    MEIKI(
+        usesMokuro = false,
+        usesPersistentCache = false,
+        persistentCacheVariant = "meiki",
+        recognitionEngine = OcrEngineType.MEIKI,
+    ),
     ;
 
     val persistsOcrResults: Boolean
@@ -44,7 +50,7 @@ enum class ReaderOcrSource(
         fun availableSources(localOcrAvailable: Boolean, mokuroAvailable: Boolean): List<ReaderOcrSource> {
             return entries.filter { source ->
                 when (source) {
-                    LOCAL, PADDLE -> localOcrAvailable
+                    LOCAL, PADDLE, MEIKI -> localOcrAvailable
                     MOKURO -> mokuroAvailable
                     else -> true
                 }

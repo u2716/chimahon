@@ -32,4 +32,11 @@ dependencies {
 
     implementation(compose.foundation)
     implementation(compose.material3.core)
+
+    // Meiki OCR runs through ONNX Runtime for Android.
+    implementation(libs.onnxruntime.android)
+
+    testImplementation(libs.bundles.test)
+    testImplementation(kotlinx.coroutines.test)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }

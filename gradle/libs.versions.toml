@@ -24,6 +24,7 @@ truetypeparser = "2.1.4"
 chimahon-ffmpeg = "v8.1.1.7"
 litert = "2.1.6"
 quickjs-kt = "1.0.0-alpha13"
+onnxruntime = "1.30.0"
 
 [libraries]
 desugar = "com.android.tools:desugar_jdk_libs_nio:2.1.5"
@@ -111,6 +112,8 @@ firebase-analytics = { module = "com.google.firebase:firebase-analytics" }
 firebase-crashlytics = { module = "com.google.firebase:firebase-crashlytics" }
 
 litert = { module = "com.google.ai.edge.litert:litert", version.ref = "litert" }
+
+onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
 
 aboutLibraries-compose = { module = "com.mikepenz:aboutlibraries-compose-m3", version.ref = "aboutlib_version" }
 

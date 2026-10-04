@@ -17,6 +17,7 @@ enum class OcrEngineType {
     CLOUD,
     LOCAL,
     PADDLE,
+    MEIKI,
     ;
 
     companion object {
@@ -24,6 +25,7 @@ enum class OcrEngineType {
             return when (value) {
                 "local" -> LOCAL
                 "paddle" -> PADDLE
+                "meiki" -> MEIKI
                 else -> CLOUD
             }
         }
@@ -100,6 +102,41 @@ suspend fun recognizePage(
         return result
     }
 
+    if (resolvedEngineType == OcrEngineType.MEIKI) {
+        val meikiOcrBridge = Injekt.get<MeikiOcrBridge>()
+        val modelDownloader = Injekt.get<ModelDownloader>()
+        if (!modelDownloader.isMeikiDownloaded) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "meiki selected but models not downloaded, triggering download" }
+            modelDownloader.triggerMeikiDownload()
+            return emptyList()
+        }
+        if (!meikiOcrBridge.isAvailable) return emptyList()
+        if (!meikiOcrBridge.isInitialized) {
+            meikiOcrBridge.init()
+        }
+        if (!meikiOcrBridge.isInitialized) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "meiki engine failed to initialize" }
+            return emptyList()
+        }
+        // Meiki is Japanese-only. Force the merger into Japanese mode so
+        // OwOCRMerger uses its Japanese paragraph-grouping path regardless of
+        // the profile language the caller supplied.
+        val meikiLanguage = OcrLanguage.JAPANESE
+        val result = processImageWithChunks(bytes, meikiLanguage) { chunk ->
+            val chunkBytes = withContext(Dispatchers.Default) {
+                chunk.bitmap.toJpegBytes(85)
+            }
+            val lines = meikiOcrBridge.recognize(chunkBytes, meikiLanguage)
+            chunk.bitmap.recycle()
+            lines
+        }
+        if (result.isEmpty()) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "meiki engine returned no results" }
+            return emptyList()
+        }
+        return result
+    }
+
     val lensClient = Injekt.get<LensClient>()
     val debugResult = lensClient.getDebugOcrData(bytes = bytes, language = language)
     return debugResult.mergedResults
@@ -170,6 +207,38 @@ suspend fun recognizePage(
         }
         if (result.isEmpty()) {
             logcat("OcrEngineSelector", LogPriority.WARN) { "paddle engine returned no results" }
+            return emptyList()
+        }
+        return result
+    }
+
+    if (resolvedEngineType == OcrEngineType.MEIKI) {
+        val meikiOcrBridge = Injekt.get<MeikiOcrBridge>()
+        val modelDownloader = Injekt.get<ModelDownloader>()
+        if (!modelDownloader.isMeikiDownloaded) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "meiki selected but models not downloaded, triggering download" }
+            modelDownloader.triggerMeikiDownload()
+            return emptyList()
+        }
+        if (!meikiOcrBridge.isAvailable) return emptyList()
+        if (!meikiOcrBridge.isInitialized) {
+            meikiOcrBridge.init()
+        }
+        if (!meikiOcrBridge.isInitialized) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "meiki engine failed to initialize" }
+            return emptyList()
+        }
+        val meikiLanguage = OcrLanguage.JAPANESE
+        val result = processImageWithChunks(bitmap, meikiLanguage) { chunk ->
+            val chunkBytes = withContext(Dispatchers.Default) {
+                chunk.bitmap.toJpegBytes(85)
+            }
+            val lines = meikiOcrBridge.recognize(chunkBytes, meikiLanguage)
+            if (chunk.bitmap !== bitmap) chunk.bitmap.recycle()
+            lines
+        }
+        if (result.isEmpty()) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "meiki engine returned no results" }
             return emptyList()
         }
         return result

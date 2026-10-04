@@ -114,6 +114,7 @@ private val OcrEngineType.preferenceKey: String
         OcrEngineType.CLOUD -> "cloud"
         OcrEngineType.LOCAL -> "local"
         OcrEngineType.PADDLE -> "paddle"
+        OcrEngineType.MEIKI -> "meiki"
     }
 
 private val OcrEngineType.label: String
@@ -121,6 +122,7 @@ private val OcrEngineType.label: String
         OcrEngineType.CLOUD -> "Cloud"
         OcrEngineType.LOCAL -> "Local"
         OcrEngineType.PADDLE -> "Paddle OCR"
+        OcrEngineType.MEIKI -> "Meiki OCR"
     }
 
 /** Clamp bounds for the draggable control bar, in pixels. */
@@ -457,6 +459,7 @@ internal fun ScreenLookupOverlay(
                     when (selected) {
                         OcrEngineType.LOCAL -> Injekt.get<ModelDownloader>().triggerDownload()
                         OcrEngineType.PADDLE -> Injekt.get<ModelDownloader>().triggerPaddleDownload()
+                        OcrEngineType.MEIKI -> Injekt.get<ModelDownloader>().triggerMeikiDownload()
                         OcrEngineType.CLOUD -> Unit
                     }
                     blocks = emptyList()
@@ -739,6 +742,20 @@ private fun OcrEngineIcon(
             )
             Text(
                 text = "2",
+                color = tint,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier.offset(y = (-0.5).dp),
+            )
+        }
+        OcrEngineType.MEIKI -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Outlined.Smartphone,
+                contentDescription = null,
+                tint = tint,
+            )
+            Text(
+                text = "3",
                 color = tint,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Black,
