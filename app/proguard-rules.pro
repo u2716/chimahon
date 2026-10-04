@@ -346,3 +346,18 @@
 -dontwarn org.ietf.jgss.Oid
 -dontwarn com.google.re2j.Matcher
 -dontwarn com.google.re2j.Pattern
+
+
+# ---------------------------------------------------------------------------
+# Meiki OCR / ONNX Runtime
+# ---------------------------------------------------------------------------
+# The native ONNX Runtime JNI layer resolves ai.onnxruntime.TensorInfo (and
+# other classes) by their original names via FindClass / GetMethodID at
+# runtime. R8 has no way to see those string references, so without these rules
+# it renames the classes or strips their <init>, and the first OrtSession.run()
+# aborts with "JNI DETECTED ERROR IN APPLICATION: mid == null in call to
+# NewObject".
+-keep class ai.onnxruntime.** { *; }
+-keepclassmembers class ai.onnxruntime.** { *; }
+-keepclasseswithmembers class ai.onnxruntime.** { <init>(...); }
+-dontwarn ai.onnxruntime.**
