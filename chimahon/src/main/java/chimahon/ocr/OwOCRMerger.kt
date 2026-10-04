@@ -29,6 +29,12 @@ object OwOCRMerger {
             return emptyList()
         }
 
+        // Lens-family engines (ScreenAI, cloud Lens) emit both a paragraph
+        // box and its line children, and can also emit near-duplicate boxes
+        // for the same region. Flatten that hierarchy before paragraph
+        // clustering so the merger never sees the same text twice.
+        lines = dedupeOverlappingLines(lines)
+
         if (config.furiganaFilter && useJapaneseLogic) {
             lines = globalFuriganaFilter(lines, config)
         }
@@ -53,6 +59,84 @@ object OwOCRMerger {
         val reordered = reorderParagraphsInRows(rows, useJapaneseLogic)
         val flattened = flattenRowsToParagraphs(reordered)
         return flattened
+    }
+
+    // ================================================================
+    // STAGE 0: dedupeOverlappingLines
+    // ================================================================
+
+    /**
+     * Drops redundant boxes produced by hierarchical or noisy detectors.
+     *
+     * Two boxes are considered duplicates when:
+     *   - their spatial overlap is high (IoU > 0.5, or one contains > 85% of
+     *     the other's area), and
+     *   - their texts are identical, or one is a substring of the other
+     *     after whitespace normalization.
+     *
+     * The "container" (longer text) is dropped in the substring case, keeping
+     * the finer-grained line-level boxes; the merger regroups them into a
+     * paragraph anyway. When texts are identical, the spatially smaller box is
+     * dropped.
+     *
+     * No-op for flat-detector engines (Paddle, Meiki) whose output contains
+     * no nested or duplicate boxes.
+     */
+    private fun dedupeOverlappingLines(lines: List<LineDict>): List<LineDict> {
+        if (lines.size < 2) return lines
+        val keep = BooleanArray(lines.size) { true }
+        val normText = lines.map { l -> l.text.filterNot { it.isWhitespace() } }
+
+        for (i in lines.indices) {
+            if (!keep[i]) continue
+            for (j in i + 1 until lines.size) {
+                if (!keep[j]) continue
+
+                val a = lines[i].bbox
+                val b = lines[j].bbox
+
+                val ix1 = maxOf(a.left, b.left)
+                val iy1 = maxOf(a.top, b.top)
+                val ix2 = minOf(a.right, b.right)
+                val iy2 = minOf(a.bottom, b.bottom)
+                if (ix1 >= ix2 || iy1 >= iy2) continue
+
+                val interArea = (ix2 - ix1) * (iy2 - iy1)
+                val aArea = a.width * a.height
+                val bArea = b.width * b.height
+                if (aArea <= 0.0 || bArea <= 0.0) continue
+
+                val unionArea = aArea + bArea - interArea
+                if (unionArea <= 0.0) continue
+
+                val iou = interArea / unionArea
+                val containmentAB = interArea / bArea
+                val containmentBA = interArea / aArea
+
+                val spatialOverlap =
+                    iou > 0.5 || containmentAB > 0.85 || containmentBA > 0.85
+                if (!spatialOverlap) continue
+
+                val ta = normText[i]
+                val tb = normText[j]
+                if (ta.isEmpty() || tb.isEmpty()) continue
+
+                val textDuplicate = ta == tb || ta.contains(tb) || tb.contains(ta)
+                if (!textDuplicate) continue
+
+                val drop = when {
+                    ta.length > tb.length -> i
+                    tb.length > ta.length -> j
+                    aArea > bArea -> i
+                    else -> j
+                }
+                keep[drop] = false
+
+                if (drop == i) break
+            }
+        }
+
+        return lines.filterIndexed { i, _ -> keep[i] }
     }
 
     // ================================================================
@@ -558,9 +642,26 @@ object OwOCRMerger {
             
             return false
         } else {
+            // Reject pairs whose cross-axis thickness differs too much. This is
+            // a proxy for font-size mismatch: dialogue text vs UI buttons, or a
+            // main line vs a much smaller caption. globalFuriganaFilter already
+            // removed small ruby, so any remaining factor-of-two thickness
+            // difference is a genuine font-size mismatch, not a legitimately
+            // grouped fragment.
+            if (thicknessRatio > 1.3) return false
+
             val vDist = verticalDistance(line1.bbox, line2.bbox) * imgH
             val lineHeight = maxOf(h1, h2)
             if (vDist >= lineHeight * 2.0) return false
+
+            // Same-row adjacency: if two horizontal boxes are physically close
+            // on the same row (small gap between them) they're fragments of the
+            // same logical line — e.g. the two halves of a wrapped dialogue
+            // line. None of the alignment or overlap checks below fire for
+            // side-by-side fragments whose centers are far apart, so we check
+            // the gap directly.
+            val hGap = horizontalDistance(line1.bbox, line2.bbox) * imgW
+            if (hGap < 2.0 * characterSize) return true
 
             val isRtl = line1.isRtl || line2.isRtl
             val startCoordDiff = if (isRtl) {
