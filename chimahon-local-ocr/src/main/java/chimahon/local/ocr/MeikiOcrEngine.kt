@@ -16,6 +16,7 @@ import java.io.Closeable
 import java.io.File
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
+import kotlin.jvm.optionals.getOrNull
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -258,8 +259,8 @@ class MeikiOcrEngine(context: Context) : chimahon.ocr.OcrEngine, Closeable {
                 // Python: `_, boxes, scores = session.run(...)`
                 val boxesT = r.get(1) as OnnxTensor
                 val scoresT = r.get(2) as OnnxTensor
-                val boxesBuf = boxesT.floatBuffer.orElse(null) ?: return emptyList()
-                val scoresBuf = scoresT.floatBuffer.orElse(null) ?: return emptyList()
+                val boxesBuf = boxesT.floatBuffer.getOrNull() ?: return emptyList()
+                val scoresBuf = scoresT.floatBuffer.getOrNull() ?: return emptyList()
                 val n = scoresBuf.limit()
                 val out = ArrayList<DetBox>(n)
                 val maxX = wOrig.toFloat()
@@ -442,20 +443,20 @@ class MeikiOcrEngine(context: Context) : chimahon.ocr.OcrEngine, Closeable {
         boxesT: OnnxTensor,
         scoresT: OnnxTensor,
     ): RecOutput {
-        val scoresBuf = scoresT.floatBuffer.orElse(null) ?: return RecOutput(0, IntArray(0), FloatArray(0), FloatArray(0))
+        val scoresBuf = scoresT.floatBuffer.getOrNull() ?: return RecOutput(0, IntArray(0), FloatArray(0), FloatArray(0))
         val n = scoresBuf.limit()
 
         val labels = IntArray(n)
-        val longBuf = labelsT.longBuffer.orElse(null)
-        val intBuf = labelsT.intBuffer.orElse(null)
-        val floatBuf = labelsT.floatBuffer.orElse(null)
+        val longBuf = labelsT.longBuffer.getOrNull()
+        val intBuf = labelsT.intBuffer.getOrNull()
+        val floatBuf = labelsT.floatBuffer.getOrNull()
         when {
             longBuf != null -> for (i in 0 until n) labels[i] = longBuf.get(i).toInt()
             intBuf != null -> for (i in 0 until n) labels[i] = intBuf.get(i)
             floatBuf != null -> for (i in 0 until n) labels[i] = floatBuf.get(i).toInt()
         }
 
-        val boxesBuf = boxesT.floatBuffer.orElse(null) ?: return RecOutput(n, labels, FloatArray(n * 4), FloatArray(n))
+        val boxesBuf = boxesT.floatBuffer.getOrNull() ?: return RecOutput(n, labels, FloatArray(n * 4), FloatArray(n))
         val boxes = FloatArray(n * 4)
         for (i in 0 until n * 4) boxes[i] = boxesBuf.get(i)
 
