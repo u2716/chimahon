@@ -25,10 +25,12 @@ class ModelDownloader(
 ) {
     companion object {
         private const val RELEASE_BASE =
-            "https://github.com/u2716/chimahon-local-models/releases/download/v2.0"
+            "https://github.com/u2716/chimahon-local-models/releases/download/v3.0"
         private const val LENS_ZIP = "models.zip"
         private const val PADDLE_ZIP = "paddle-ocr.zip"
         private const val PADDLE_DIR = "paddle_ocr"
+        private const val MEIKI_ZIP = "meiki-ocr.zip"
+        private const val MEIKI_DIR = "meiki_ocr"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -41,6 +43,11 @@ class ModelDownloader(
     val isPaddleDownloaded: Boolean
         get() = supportedAbi()?.let { abi ->
             requiredPaddleFiles(abi).all { it.isFile && it.length() > 0L }
+        } ?: false
+
+    val isMeikiDownloaded: Boolean
+        get() = supportedAbi()?.let {
+            requiredMeikiFiles().all { file -> file.isFile && file.length() > 0L }
         } ?: false
 
     private fun supportedAbi(): String? = when {
@@ -98,6 +105,15 @@ class ModelDownloader(
         )
     }
 
+    private fun requiredMeikiFiles(): List<File> {
+        val root = File(context.filesDir, MEIKI_DIR)
+        return listOf(
+            File(root, "meiki.text.detect.v0.1.960x544.onnx"),
+            File(root, "meiki.text.rec.v0.960x32.onnx"),
+            File(root, "meiki.text.rec.v0.vertical.32x480.onnx"),
+        )
+    }
+
     fun triggerDownload() {
         if (isDownloaded) return
         scope.launch {
@@ -115,6 +131,16 @@ class ModelDownloader(
                 progressText = "Downloading Paddle OCR models...",
                 successText = "Paddle OCR models downloaded successfully",
             ) { downloadZip(PADDLE_ZIP) }
+        }
+    }
+
+    fun triggerMeikiDownload() {
+        if (isMeikiDownloaded) return
+        scope.launch {
+            downloadWithNotifications(
+                progressText = "Downloading Meiki OCR models...",
+                successText = "Meiki OCR models downloaded successfully",
+            ) { downloadZip(MEIKI_ZIP) }
         }
     }
 
@@ -163,6 +189,8 @@ class ModelDownloader(
     suspend fun downloadAndExtract(): Result<Unit> = downloadZip(LENS_ZIP)
 
     suspend fun downloadPaddleAndExtract(): Result<Unit> = downloadZip(PADDLE_ZIP)
+
+    suspend fun downloadMeikiAndExtract(): Result<Unit> = downloadZip(MEIKI_ZIP)
 
     private suspend fun downloadZip(zipName: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {

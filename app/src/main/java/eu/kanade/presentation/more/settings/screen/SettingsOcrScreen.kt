@@ -131,6 +131,7 @@ object SettingsOcrScreen : SearchableSettings {
                                 arrayOf(
                                     "local" to "Local (On-Device)",
                                     "paddle" to "Paddle OCR (On-Device)",
+                                    "meiki" to "Meiki OCR (On-Device)",
                                 )
                             } else {
                                 emptyArray()
@@ -143,6 +144,9 @@ object SettingsOcrScreen : SearchableSettings {
                             }
                             if (value == "paddle") {
                                 Injekt.get<ModelDownloader>().triggerPaddleDownload()
+                            }
+                            if (value == "meiki") {
+                                Injekt.get<ModelDownloader>().triggerMeikiDownload()
                             }
                             true
                         },
