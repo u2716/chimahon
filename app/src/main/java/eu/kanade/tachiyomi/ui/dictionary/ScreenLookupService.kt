@@ -84,6 +84,21 @@ class ScreenLookupService : Service() {
             }
         }
     }
+    // [fix-screen-lookup-aspect] Invalidate capture size across screen on/off.
+    // onDisplayChanged is not reliably fired on lock/unlock on all OEMs; the
+    // display metrics (rotation, insets, cutout mode, fold state) can change
+    // while the screen is off. If the VirtualDisplay / ImageReader were sized
+    // for pre-lock metrics, subsequent captures have a mismatched aspect ratio
+    // and the overlay boxes get squished horizontally.
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_SCREEN_OFF -> {
+                    cachedCaptureSize = null
+                }
+            }
+        }
+    }
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) {}
         override fun onDisplayRemoved(displayId: Int) {}
@@ -105,6 +120,15 @@ class ScreenLookupService : Service() {
             closeSystemDialogsReceiver,
             IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS),
             ContextCompat.RECEIVER_EXPORTED,
+        )
+        ContextCompat.registerReceiver(
+            this,
+            screenStateReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         runCatching {
             getSystemService<DisplayManager>()?.registerDisplayListener(displayListener, mainHandler)
@@ -146,6 +170,7 @@ class ScreenLookupService : Service() {
     override fun onDestroy() {
         runCatching { getSystemService<DisplayManager>()?.unregisterDisplayListener(displayListener) }
         runCatching { unregisterReceiver(closeSystemDialogsReceiver) }
+        runCatching { unregisterReceiver(screenStateReceiver) }
         captureJob?.cancel()
         overlayController?.release()
         overlayController = null

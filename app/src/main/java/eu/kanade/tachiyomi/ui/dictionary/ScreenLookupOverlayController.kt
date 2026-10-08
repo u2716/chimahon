@@ -90,6 +90,7 @@ import eu.kanade.tachiyomi.ui.reader.viewer.OcrTextBlock
 import eu.kanade.tachiyomi.ui.reader.viewer.extractOcrLookupString
 import eu.kanade.tachiyomi.ui.reader.viewer.fullText
 import eu.kanade.tachiyomi.ui.reader.viewer.isLookupStartChar
+import eu.kanade.tachiyomi.ui.reader.viewer.mapToFitViewport
 import eu.kanade.tachiyomi.ui.reader.viewer.orderedDisplayText
 import eu.kanade.tachiyomi.ui.reader.viewer.orderedFullText
 import eu.kanade.tachiyomi.util.system.copyToClipboard
@@ -427,6 +428,21 @@ internal fun ScreenLookupOverlay(
         val heightPx = with(localDensity) { maxHeight.toPx() }
         val barBounds = rememberBarBounds(widthPx, heightPx)
 
+        // [fix-screen-lookup-aspect] Remap OCR blocks from screenshot-normalized
+        // space into the overlay canvas's normalized space. No-op when the canvas
+        // aspect matches the screenshot. Prevents boxes from being squished when
+        // the overlay window is relaid out at a different size than the captured
+        // bitmap (e.g. after a phone lock/unlock).
+        val displayBlocks = remember(blocks, screenshot, widthPx, heightPx) {
+            mapToFitViewport(
+                blocks = blocks,
+                imgWidth = screenshot.width,
+                imgHeight = screenshot.height,
+                canvasWidth = widthPx,
+                canvasHeight = heightPx,
+            )
+        }
+
         LaunchedEffect(barBounds) {
             val clamped = barBounds.clamp(barOffset)
             if (clamped != barOffset) {
@@ -490,7 +506,7 @@ internal fun ScreenLookupOverlay(
         )
 
         OcrBlockCanvas(
-            blocks = blocks,
+            blocks = displayBlocks,
             boxScaleX = boxScaleX,
             boxScaleY = boxScaleY,
             activeBlock = selection?.block,
