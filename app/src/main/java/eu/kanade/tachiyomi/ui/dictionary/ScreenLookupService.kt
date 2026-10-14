@@ -516,10 +516,16 @@ class ScreenLookupService : Service() {
                     val wm = createDisplayContext(display)
                         .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
                         .getSystemService<WindowManager>()
-                    val bounds = wm?.currentWindowMetrics?.bounds
+                    val bounds = wm?.maximumWindowMetrics?.bounds
                     if (bounds != null && bounds.width() > 0 && bounds.height() > 0) {
                         return CaptureSize(bounds.width(), bounds.height())
                     }
+                }
+            } catch (_: Exception) {}
+            try {
+                val bounds = windowManager.maximumWindowMetrics.bounds
+                if (bounds.width() > 0 && bounds.height() > 0) {
+                    return CaptureSize(bounds.width(), bounds.height())
                 }
             } catch (_: Exception) {}
         }

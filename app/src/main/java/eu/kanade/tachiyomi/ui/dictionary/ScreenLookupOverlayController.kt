@@ -227,15 +227,14 @@ internal class ScreenLookupOverlayController(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 fitInsetsTypes = 0
-            } else {
-                @Suppress("DEPRECATION")
-                flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                fitInsetsSides = 0
             }
             layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
@@ -426,6 +425,7 @@ internal fun ScreenLookupOverlay(
         val widthPx = with(localDensity) { maxWidth.toPx() }
         val heightPx = with(localDensity) { maxHeight.toPx() }
         val barBounds = rememberBarBounds(widthPx, heightPx)
+
 
         LaunchedEffect(barBounds) {
             val clamped = barBounds.clamp(barOffset)
