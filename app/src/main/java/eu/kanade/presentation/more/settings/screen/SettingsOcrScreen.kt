@@ -162,6 +162,8 @@ object SettingsOcrScreen : SearchableSettings {
                 ),
             ),
 
+            getOcrModelsGroup(),
+
             // 2. OCR Boxes
             Preference.PreferenceGroup(
                 title = stringResource(MR.strings.pref_category_ocr_boxes),

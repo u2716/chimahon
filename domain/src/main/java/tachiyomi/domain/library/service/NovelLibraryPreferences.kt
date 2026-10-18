@@ -25,7 +25,9 @@ class NovelLibraryPreferences(
 
     fun showHiddenCategories() = preferenceStore.getBoolean("hide_novel_hidden_categories", false)
 
-    fun defaultCategory() = preferenceStore.getString(NOVEL_DEFAULT_CATEGORY_PREF_KEY, "")
+    fun defaultCategory() = preferenceStore.getInt(NOVEL_DEFAULT_CATEGORY_PREF_KEY, -1)
+
+    fun downloadedBookFolder(novelId: Long) = preferenceStore.getString("novel_downloaded_book_folder_$novelId", "")
 
     fun sortMode() = preferenceStore.getString("pref_novel_library_sort_mode", "DateAdded")
 

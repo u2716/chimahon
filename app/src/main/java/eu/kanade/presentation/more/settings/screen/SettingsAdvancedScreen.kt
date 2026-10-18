@@ -45,7 +45,6 @@ import eu.kanade.presentation.more.settings.screen.debug.DebugInfoScreen
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.core.security.SecurityPreferences
 import eu.kanade.tachiyomi.data.download.DownloadCache
-import eu.kanade.tachiyomi.data.ocr.ModelDownloader
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.library.MetadataUpdateJob
 import eu.kanade.tachiyomi.data.library.anime.AnimeMetadataUpdateJob
@@ -71,7 +70,6 @@ import eu.kanade.tachiyomi.util.CrashLogUtil
 import eu.kanade.tachiyomi.util.storage.DiskUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
 import eu.kanade.tachiyomi.util.system.isDebugBuildType
-import eu.kanade.tachiyomi.util.system.isReleaseBuildType
 import eu.kanade.tachiyomi.util.system.isShizukuInstalled
 import eu.kanade.tachiyomi.util.system.powerManager
 import eu.kanade.tachiyomi.util.system.setDefaultSettings
@@ -187,26 +185,6 @@ object SettingsAdvancedScreen : SearchableSettings {
                     true
                 },
             ),
-            kotlin.run {
-                val importLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.OpenDocument()
-                ) { uri ->
-                    if (uri != null) {
-                        scope.launch {
-                            val result = Injekt.get<ModelDownloader>().importFromUri(uri)
-                            context.toast(
-                                if (result.isSuccess) "OCR models imported"
-                                else "Import failed: ${result.exceptionOrNull()?.message}"
-                            )
-                        }
-                    }
-                }
-                Preference.PreferenceItem.TextPreference(
-                    title = "Import OCR Models",
-                    subtitle = "Import models.zip from device storage",
-                    onClick = { importLauncher.launch(arrayOf("application/zip")) },
-                )
-            },
             // KMK <--
             getBackgroundActivityGroup(),
             getDataGroup(),
@@ -579,14 +557,6 @@ object SettingsAdvancedScreen : SearchableSettings {
                 Preference.PreferenceItem.ListPreference(
                     preference = extensionInstallerPref,
                     entries = extensionInstallerPref.entries
-                        .filter {
-                            // TODO: allow private option in stable versions once URL handling is more fleshed out
-                            if (isReleaseBuildType) {
-                                it != BasePreferences.ExtensionInstaller.PRIVATE
-                            } else {
-                                true
-                            }
-                        }
                         .associateWith { stringResource(it.titleRes) }
                         .toImmutableMap(),
                     title = stringResource(MR.strings.ext_installer_pref),

@@ -4,9 +4,14 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import chimahon.dictionary.hasNewerRevision
 import com.hippo.unifile.UniFile
+import eu.kanade.tachiyomi.data.model.ModelBundleInstaller
+import eu.kanade.tachiyomi.data.model.ModelVersionResolver
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.util.system.notify
+import java.io.File
+import java.io.InputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,34 +19,97 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.File
-import java.io.FileOutputStream
-import java.io.InputStream
-import java.util.zip.ZipInputStream
+import tachiyomi.core.common.preference.Preference
+import tachiyomi.core.common.preference.PreferenceStore
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 class ModelDownloader(
     private val context: Context,
     private val httpClient: OkHttpClient,
+    private val versionResolver: ModelVersionResolver,
+    preferenceStore: PreferenceStore,
 ) {
     companion object {
-        private const val RELEASE_BASE =
-            "https://github.com/u2716/chimahon-local-models/releases/download/v3.0"
+        /**
+         * Floor for the bundled model release. Bump this when publishing new
+         * models so installs with no network (or a failed check) still resolve to
+         * a real release; [latestOcrVersion] moves it forward afterwards.
+         */
+        private const val MODELS_VERSION = "3.1"
+        private const val RELEASE_URL =
+            "https://github.com/u2716/chimahon-local-models/releases/download/v"
         private const val LENS_ZIP = "models.zip"
         private const val PADDLE_ZIP = "paddle-ocr.zip"
         private const val PADDLE_DIR = "paddle_ocr"
         private const val MEIKI_ZIP = "meiki-ocr.zip"
         private const val MEIKI_DIR = "meiki_ocr"
+        private const val LENS_DIR = "screenai_models"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // App state, so installed/known model versions stay out of backups.
+    private val installedLensVersion =
+        preferenceStore.getString(Preference.appStateKey("ocr_lens_model_version"), "")
+    private val installedPaddleVersion =
+        preferenceStore.getString(Preference.appStateKey("ocr_paddle_model_version"), "")
+    private val knownVersion =
+        preferenceStore.getString(Preference.appStateKey("ocr_models_known_version"), "")
+
+    /**
+     * Release this build would download from: the newest one a check has seen,
+     * falling back to [MODELS_VERSION]. Both payloads live in the same release,
+     * so this is a single value for Lens and Paddle alike.
+     */
+    val latestVersion: String
+        get() = knownVersion.get().ifBlank { MODELS_VERSION }
+
+    /**
+     * Version actually on disk. Installs that predate version tracking recorded
+     * none, so a blank is reported as the latest rather than nagging every
+     * existing user with a phantom update.
+     */
+    val lensVersionInstalled: String
+        get() = installedLensVersion.get().ifBlank { latestVersion }
+
+    val paddleVersionInstalled: String
+        get() = installedPaddleVersion.get().ifBlank { latestVersion }
+
+    val hasLensUpdate: Boolean
+        get() = isDownloaded && hasNewerRevision(lensVersionInstalled, latestVersion)
+
+    val hasPaddleUpdate: Boolean
+        get() = isPaddleDownloaded && hasNewerRevision(paddleVersionInstalled, latestVersion)
+
+    /**
+     * Records the newest published release so subsequent downloads pull it.
+     * Never moves backwards: releases are created in dispatch order, so a
+     * re-dispatched older tag must not become the known version.
+     */
+    suspend fun checkForUpdates(): Boolean {
+        val latest = versionResolver.latestOcrVersion() ?: return false
+        if (isDownloaded && installedLensVersion.get().isBlank()) installedLensVersion.set(MODELS_VERSION)
+        if (isPaddleDownloaded && installedPaddleVersion.get().isBlank()) installedPaddleVersion.set(MODELS_VERSION)
+        if (knownVersion.get().isBlank()) {
+            // First successful check pins the floor so later comparisons are real.
+            knownVersion.set(MODELS_VERSION)
+        }
+        if (hasNewerRevision(latestVersion, latest)) {
+            knownVersion.set(latest)
+        }
+        return true
+    }
+
     val isDownloaded: Boolean
         get() = supportedAbi()?.let { abi ->
+            ModelBundleInstaller.recover(context.filesDir, LENS_DIR)
             requiredLensFiles(abi).all { it.isFile && it.length() > 0L }
         } ?: false
 
     val isPaddleDownloaded: Boolean
         get() = supportedAbi()?.let { abi ->
+            ModelBundleInstaller.recover(context.filesDir, PADDLE_DIR)
             requiredPaddleFiles(abi).all { it.isFile && it.length() > 0L }
         } ?: false
 
@@ -50,6 +118,27 @@ class ModelDownloader(
             requiredMeikiFiles().all { file -> file.isFile && file.length() > 0L }
         } ?: false
 
+    /** Removes the on-device OCR models and forgets the recorded version. */
+    fun deleteLensModels(): Boolean = deleteDir(File(context.filesDir, LENS_DIR)) {
+        installedLensVersion.delete()
+    }
+
+    /** Removes the Paddle OCR models and forgets the recorded version. */
+    fun deletePaddleModels(): Boolean = deleteDir(File(context.filesDir, PADDLE_DIR)) {
+        installedPaddleVersion.delete()
+    }
+
+    /** Removes the Meiki OCR models. No per-model version pref to clear. */
+    fun deleteMeikiModels(): Boolean = deleteDir(File(context.filesDir, MEIKI_DIR)) {}
+
+    private fun deleteDir(dir: File, onDeleted: () -> Unit): Boolean = synchronized(ModelBundleInstaller) {
+        val previous = File(dir.parentFile, ".${dir.name}.previous")
+        val deleted = (!dir.exists() || dir.deleteRecursively()) &&
+            (!previous.exists() || previous.deleteRecursively())
+        if (deleted) onDeleted()
+        deleted
+    }
+
     private fun supportedAbi(): String? = when {
         "arm64-v8a" in Build.SUPPORTED_ABIS -> "arm64-v8a"
         "armeabi-v7a" in Build.SUPPORTED_ABIS -> "armeabi-v7a"
@@ -57,7 +146,7 @@ class ModelDownloader(
     }
 
     private fun requiredLensFiles(abi: String): List<File> {
-        val root = File(context.filesDir, "screenai_models")
+        val root = File(context.filesDir, LENS_DIR)
         return listOf(
             // Runner / engine
             File(root, "lots_multiscript_v8_runner.binarypb"),
@@ -114,23 +203,31 @@ class ModelDownloader(
         )
     }
 
-    fun triggerDownload() {
-        if (isDownloaded) return
+    /**
+     * [force] re-downloads over an existing install, which is what an update
+     * needs; without it the guard keeps an up-to-date set from being refetched.
+     */
+    fun triggerDownload(force: Boolean = false) {
+        if (isDownloaded && !force) return
         scope.launch {
             downloadWithNotifications(
                 progressText = "Downloading on-device OCR models...",
                 successText = "On-device OCR models downloaded successfully",
-            ) { downloadZip(LENS_ZIP) }
+            ) {
+                downloadAndExtract()
+            }
         }
     }
 
-    fun triggerPaddleDownload() {
-        if (isPaddleDownloaded) return
+    fun triggerPaddleDownload(force: Boolean = false) {
+        if (isPaddleDownloaded && !force) return
         scope.launch {
             downloadWithNotifications(
                 progressText = "Downloading Paddle OCR models...",
                 successText = "Paddle OCR models downloaded successfully",
-            ) { downloadZip(PADDLE_ZIP) }
+            ) {
+                downloadPaddleAndExtract()
+            }
         }
     }
 
@@ -144,11 +241,17 @@ class ModelDownloader(
         }
     }
 
+    /**
+     * Release the URLs are built from. Both model sets ship in the same GitHub
+     * release, so one known version covers both.
+     */
+    private fun versionDownloadedFrom(): String = latestVersion
+
     private suspend fun downloadWithNotifications(
         progressText: String,
         successText: String,
         download: suspend () -> Result<Unit>,
-    ) {
+    ): Result<Unit> {
         context.notify(
             Notifications.ID_OCR_PROGRESS,
             Notifications.CHANNEL_OCR_MODEL_DOWNLOAD,
@@ -184,30 +287,70 @@ class ModelDownloader(
                 setOngoing(false)
             }
         }
+        return result
     }
 
-    suspend fun downloadAndExtract(): Result<Unit> = downloadZip(LENS_ZIP)
+    suspend fun updateInstalledModels(): Result<Unit> {
+        if (hasLensUpdate) {
+            val result = downloadWithNotifications(
+                "Updating on-device OCR models...", "On-device OCR models updated",
+            ) { downloadAndExtract() }
+            if (result.isFailure) return result
+        }
+        if (hasPaddleUpdate) {
+            val result = downloadWithNotifications(
+                "Updating Paddle OCR models...", "Paddle OCR models updated",
+            ) { downloadPaddleAndExtract() }
+            if (result.isFailure) return result
+        }
+        return Result.success(Unit)
+    }
 
-    suspend fun downloadPaddleAndExtract(): Result<Unit> = downloadZip(PADDLE_ZIP)
+    suspend fun downloadAndExtract(): Result<Unit> =
+        downloadZip(LENS_ZIP)
+
+    suspend fun downloadPaddleAndExtract(): Result<Unit> =
+        downloadZip(PADDLE_ZIP)
 
     suspend fun downloadMeikiAndExtract(): Result<Unit> = downloadZip(MEIKI_ZIP)
 
     private suspend fun downloadZip(zipName: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val url = "$RELEASE_BASE/$zipName"
-            val request = Request.Builder().url(url).build()
-            val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(
-                    RuntimeException("Download failed: HTTP ${response.code}")
-                )
+            // Meiki is a fork addition; its models ship in the fork's pinned release floor.
+            val version = if (zipName == MEIKI_ZIP) MODELS_VERSION else versionDownloadedFrom()
+            val bundle = when (zipName) {
+                LENS_ZIP -> LENS_DIR
+                PADDLE_ZIP -> PADDLE_DIR
+                MEIKI_ZIP -> MEIKI_DIR
+                else -> error("Unknown OCR model zip: $zipName")
             }
+            val url = "$RELEASE_URL$version/$zipName"
+            val request = Request.Builder().url(url).build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(
+                        RuntimeException("Download failed: HTTP ${response.code}")
+                    )
+                }
 
-            val body = response.body ?: return@withContext Result.failure(
-                RuntimeException("Empty response body")
-            )
+                val body = response.body ?: return@withContext Result.failure(
+                    RuntimeException("Empty response body")
+                )
 
-            body.byteStream().use { input -> extractZip(input) }
+                body.byteStream().use { input -> extractZip(input, bundle) }
+            }
+            when (zipName) {
+                LENS_ZIP -> {
+                    installedLensVersion.set(version)
+                    Injekt.get<LocalOcrBridge>().invalidateModels()
+                }
+                PADDLE_ZIP -> {
+                    installedPaddleVersion.set(version)
+                    Injekt.get<PaddleOcrBridge>().invalidateModels()
+                }
+                MEIKI_ZIP -> Unit // Meiki bridge re-initialises lazily; no explicit invalidate.
+                else -> error("Unknown OCR model zip: $zipName")
+            }
 
             return@withContext Result.success(Unit)
         } catch (e: Exception) {
@@ -220,31 +363,28 @@ class ModelDownloader(
             val source = UniFile.fromUri(context, uri)
                 ?: return@withContext Result.failure(RuntimeException("Could not open file"))
             source.openInputStream().use { extractZip(it) }
+            // A hand-imported archive is the pinned release unless the user
+            // fetched it elsewhere; treat it as such rather than as unknown.
+            installedLensVersion.set(versionDownloadedFrom())
+            Injekt.get<LocalOcrBridge>().invalidateModels()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    private fun extractZip(input: InputStream) {
-        val root = context.filesDir.canonicalFile
-        ZipInputStream(input).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                val target = File(root, entry.name).canonicalFile
-                check(target.path == root.path || target.path.startsWith(root.path + File.separator)) {
-                    "Unsafe zip entry: ${entry.name}"
-                }
-                if (entry.isDirectory) {
-                    target.mkdirs()
-                } else {
-                    target.parentFile?.mkdirs()
-                    FileOutputStream(target).use { out -> zip.copyTo(out) }
-                }
-                zip.closeEntry()
-            }
+    private fun extractZip(input: InputStream, bundle: String = LENS_DIR) {
+        val abi = supportedAbi() ?: error("Unsupported device architecture")
+        val bundleRoot = File(context.filesDir, bundle)
+        val required = when (bundle) {
+            LENS_DIR -> requiredLensFiles(abi)
+            PADDLE_DIR -> requiredPaddleFiles(abi)
+            MEIKI_DIR -> requiredMeikiFiles()
+            else -> error("Unknown OCR model bundle: $bundle")
         }
+        ModelBundleInstaller.install(input, context.filesDir, bundle, required.map { it.relativeTo(bundleRoot).path })
     }
+
 }
 
 private fun Context.cancelNotification(id: Int) {
