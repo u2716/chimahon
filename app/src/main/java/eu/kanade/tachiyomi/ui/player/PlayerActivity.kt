@@ -713,7 +713,10 @@ class PlayerActivity : BaseActivity() {
         )
 
         val mpvConfFile = File("$configDir/mpv.conf")
-        advancedPlayerPreferences.mpvConf().get().let { mpvConfFile.writeText(it) }
+        advancedPlayerPreferences.mpvConf().get().let {
+            // User options follow the defaults so explicit subtitle settings still take priority.
+            mpvConfFile.writeText("sub-auto=fuzzy\nsub-file-paths=ass:srt:sub:subs:subtitles\n$it")
+        }
         val mpvInputFile = File("$configDir/input.conf")
         advancedPlayerPreferences.mpvInput().get().let { mpvInputFile.writeText(it) }
 
@@ -723,11 +726,6 @@ class PlayerActivity : BaseActivity() {
             removeUnmodifiedAssetCopy(configDir, "cacert.pem")
         }
         writeFontsConf(configDir)
-        setupFontsDirectory()
-
-        val showBlackBars = if (subtitlePreferences.subtitleBlackBars().get()) "yes" else "no"
-        MPVLib.setOptionString("sub-ass-force-margins", showBlackBars)
-        MPVLib.setOptionString("sub-use-margins", showBlackBars)
 
         player.initialize(
             configDir = configDir,
@@ -821,19 +819,6 @@ class PlayerActivity : BaseActivity() {
         } catch (e: IOException) {
             logcat(LogPriority.ERROR, e) { "Failed to remove unused asset file: $filename" }
         }
-    }
-
-    private fun setupFontsDirectory() {
-        val fontsDir = chimahon.novel.data.FontManager.getFontsDir(applicationContext)
-        if (!fontsDir.exists()) fontsDir.mkdirs()
-        MPVLib.setPropertyString(
-            "sub-fonts-dir",
-            fontsDir.path,
-        )
-        MPVLib.setPropertyString(
-            "osd-fonts-dir",
-            fontsDir.path,
-        )
     }
 
     /**
@@ -1102,8 +1087,6 @@ class PlayerActivity : BaseActivity() {
             "secondary-sid" -> trackId(value)?.let {
                 viewModel.updateSubtitle(viewModel.selectedSubtitles.value.first, it)
             }
-            "sub-text" -> viewModel.updateSubtitleText(value)
-            "secondary-sub-text" -> viewModel.updateSecondarySubtitleText(value)
             "hwdec", "hwdec-current" -> viewModel.getDecoder()
             "user-data/aniyomi" -> viewModel.handleLuaInvocation(property, value)
         }

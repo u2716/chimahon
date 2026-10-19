@@ -25,6 +25,7 @@ import android.util.AttributeSet
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.SurfaceHolder
+import chimahon.novel.data.FontManager
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.ui.player.controls.components.panels.toColorHexString
 import eu.kanade.tachiyomi.ui.player.settings.AdvancedPlayerPreferences
@@ -33,6 +34,7 @@ import eu.kanade.tachiyomi.ui.player.settings.DecoderPreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.SubtitleAssOverride
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
+import eu.kanade.tachiyomi.ui.player.utils.NativeSubtitleTextFilter
 import `is`.xyz.mpv.BaseMPVView
 import `is`.xyz.mpv.KeyMapping
 import `is`.xyz.mpv.MPVLib
@@ -117,6 +119,9 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
     var timePos: Int?
         get() = getPropertyInt("time-pos")
         set(position) = MPVLib.setPropertyInt("time-pos", position!!)
+
+    val timePosSeconds: Double?
+        get() = getPropertyDouble("time-pos")
 
     var paused: Boolean?
         get() = getPropertyBoolean("pause")
@@ -265,8 +270,6 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
 
         "sid" to MPVLib.mpvFormat.MPV_FORMAT_STRING,
         "secondary-sid" to MPVLib.mpvFormat.MPV_FORMAT_STRING,
-        "sub-text" to MPVLib.mpvFormat.MPV_FORMAT_STRING,
-        "secondary-sub-text" to MPVLib.mpvFormat.MPV_FORMAT_STRING,
         "aid" to MPVLib.mpvFormat.MPV_FORMAT_STRING,
 
         "speed" to MPVLib.mpvFormat.MPV_FORMAT_DOUBLE,
@@ -306,6 +309,14 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
     }
 
     private fun setupSubtitlesOptions() {
+        // Set font paths after MPV is created and before its subtitle renderer is initialized.
+        val fontsDir = FontManager.getFontsDir(context)
+        MPVLib.setOptionString("sub-fonts-dir", fontsDir.path)
+        MPVLib.setOptionString("osd-fonts-dir", fontsDir.path)
+        val showBlackBars = if (subtitlePreferences.subtitleBlackBars().get()) "yes" else "no"
+        MPVLib.setOptionString("sub-ass-force-margins", showBlackBars)
+        MPVLib.setOptionString("sub-use-margins", showBlackBars)
+        MPVLib.setSubtitleTextFilter(NativeSubtitleTextFilter(subtitlePreferences))
         MPVLib.setOptionString("sub-delay", (subtitlePreferences.subtitlesDelay().get() / 1000.0).toString())
         MPVLib.setOptionString("sub-speed", subtitlePreferences.subtitlesSpeed().get().toString())
         MPVLib.setOptionString(
@@ -322,19 +333,22 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet) : BaseMPVView(c
         MPVLib.setOptionString("sub-bold", if (subtitlePreferences.boldSubtitles().get()) "yes" else "no")
         MPVLib.setOptionString("sub-italic", if (subtitlePreferences.italicSubtitles().get()) "yes" else "no")
         MPVLib.setOptionString("sub-justify", subtitlePreferences.subtitleJustification().get().value)
-        // Subtitle text is rendered by the Compose player overlay so lookup/highlight can use
-        // exact TextLayoutResult glyph bounds. Keep MPV's subtitle track active for timing and
-        // sub-text updates, but make MPV's own draw layer transparent.
-        MPVLib.setOptionString("sub-color", "#00FFFFFF")
+        MPVLib.setOptionString("sub-color", subtitlePreferences.textColorSubtitles().get().toColorHexString())
         MPVLib.setOptionString(
             "sub-back-color",
-            "#00000000",
+            subtitlePreferences.backgroundColorSubtitles().get().toColorHexString(),
         )
-        MPVLib.setOptionString("sub-border-color", "#00000000")
+        MPVLib.setOptionString("sub-border-color", subtitlePreferences.borderColorSubtitles().get().toColorHexString())
         MPVLib.setOptionString("sub-border-size", subtitlePreferences.subtitleBorderSize().get().toString())
         MPVLib.setOptionString("sub-border-style", subtitlePreferences.borderStyleSubtitles().get().value)
         MPVLib.setOptionString("sub-shadow-offset", subtitlePreferences.shadowOffsetSubtitles().get().toString())
-        MPVLib.setOptionString("sub-pos", subtitlePreferences.subtitlePos().get().toString())
+        MPVLib.setOptionString(
+            "sub-pos",
+            subtitlePreferences.subtitlePos().get().coerceIn(
+                SubtitlePreferences.POSITION_MIN,
+                SubtitlePreferences.POSITION_MAX,
+            ).toString(),
+        )
         MPVLib.setOptionString("sub-scale", subtitlePreferences.subtitleFontScale().get().toString())
     }
 }
