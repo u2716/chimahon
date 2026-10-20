@@ -41,12 +41,14 @@ internal fun getOcrModelsGroup(): Preference.PreferenceGroup {
         stringResource(MR.strings.model_ocr_lens),
         stringResource(MR.strings.model_ocr_paddle),
         stringResource(KMR.strings.ocr_source_meiki),
+        stringResource(KMR.strings.ocr_source_oneocr),
         stringResource(MR.strings.model_panel_detection),
     )
     val descriptions = listOf(
         "Reads text offline when Local OCR is selected.",
         "Reads text offline when Paddle OCR is selected.",
         "Reads Japanese text offline when Meiki OCR is selected.",
+        "Reads text offline when OneOCR is selected (CJK, Latin, Cyrillic, Arabic, Devanagari, Hebrew, Thai, Greek).",
         "Finds manga panels for panel-by-panel navigation.",
     )
     var statuses by remember { mutableStateOf<List<OcrModelStatus>>(emptyList()) }
@@ -58,9 +60,9 @@ internal fun getOcrModelsGroup(): Preference.PreferenceGroup {
     LaunchedEffect(refreshing) {
         while (true) {
             statuses = withIOContext {
-                val installed = listOf(ocr.isDownloaded, ocr.isPaddleDownloaded, ocr.isMeikiDownloaded, panel.isDownloaded)
-                val versions = listOf(ocr.lensVersionInstalled, ocr.paddleVersionInstalled, null, null)
-                listOf("screenai_models", "paddle_ocr", "meiki_ocr", "panel_detector").mapIndexed { index, directory ->
+                val installed = listOf(ocr.isDownloaded, ocr.isPaddleDownloaded, ocr.isMeikiDownloaded, ocr.isOneOcrDownloaded, panel.isDownloaded)
+                val versions = listOf(ocr.lensVersionInstalled, ocr.paddleVersionInstalled, null, null, null)
+                listOf("screenai_models", "paddle_ocr", "meiki_ocr", "one_ocr", "panel_detector").mapIndexed { index, directory ->
                     val bytes = File(context.filesDir, directory).walkTopDown().filter { it.isFile }.sumOf { it.length() }
                     OcrModelStatus(installed[index], bytes, versions[index])
                 }
@@ -101,6 +103,7 @@ internal fun getOcrModelsGroup(): Preference.PreferenceGroup {
                                     0 -> ocr.deleteLensModels()
                                     1 -> ocr.deletePaddleModels()
                                     2 -> ocr.deleteMeikiModels()
+                                    3 -> ocr.deleteOneOcrModels()
                                     else -> panel.deleteModel()
                                 }
                             }
@@ -114,6 +117,7 @@ internal fun getOcrModelsGroup(): Preference.PreferenceGroup {
                             0 -> ocr.triggerDownload()
                             1 -> ocr.triggerPaddleDownload()
                             2 -> ocr.triggerMeikiDownload()
+                            3 -> ocr.triggerOneOcrDownload()
                             else -> panel.triggerDownload()
                         }
                         selected = null

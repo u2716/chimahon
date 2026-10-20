@@ -111,7 +111,7 @@ object SettingsOcrScreen : SearchableSettings {
 
         val parallelOcrSubtitle = when {
             parallelOcrLimit == 1 -> "1 chapter (Recommended - safe and stable)"
-            ocrEngine == "local" || ocrEngine == "paddle" -> "$parallelOcrLimit chapters (Running multiple OCR tasks on-device simultaneously will increase battery drain and cause the device to heat up)"
+            ocrEngine == "local" || ocrEngine == "paddle" || ocrEngine == "meiki" || ocrEngine == "oneocr" -> "$parallelOcrLimit chapters (Running multiple OCR tasks on-device simultaneously will increase battery drain and cause the device to heat up)"
             else -> "$parallelOcrLimit chapters (Running multiple OCR tasks online simultaneously may cause temporary rate limits or IP blocks)"
         }
 
@@ -132,6 +132,7 @@ object SettingsOcrScreen : SearchableSettings {
                                     "local" to "Local (On-Device)",
                                     "paddle" to "Paddle OCR (On-Device)",
                                     "meiki" to "Meiki OCR (On-Device)",
+                                    "oneocr" to "OneOCR (On-Device)",
                                 )
                             } else {
                                 emptyArray()
@@ -147,6 +148,9 @@ object SettingsOcrScreen : SearchableSettings {
                             }
                             if (value == "meiki") {
                                 Injekt.get<ModelDownloader>().triggerMeikiDownload()
+                            }
+                            if (value == "oneocr") {
+                                Injekt.get<ModelDownloader>().triggerOneOcrDownload()
                             }
                             true
                         },

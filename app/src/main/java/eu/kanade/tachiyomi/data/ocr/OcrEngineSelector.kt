@@ -18,6 +18,7 @@ enum class OcrEngineType {
     LOCAL,
     PADDLE,
     MEIKI,
+    ONEOCR,
     ;
 
     companion object {
@@ -26,6 +27,7 @@ enum class OcrEngineType {
                 "local" -> LOCAL
                 "paddle" -> PADDLE
                 "meiki" -> MEIKI
+                "oneocr" -> ONEOCR
                 else -> CLOUD
             }
         }
@@ -137,6 +139,37 @@ suspend fun recognizePage(
         return result
     }
 
+    if (resolvedEngineType == OcrEngineType.ONEOCR) {
+        val oneOcrBridge = Injekt.get<OneOcrBridge>()
+        val modelDownloader = Injekt.get<ModelDownloader>()
+        if (!modelDownloader.isOneOcrDownloaded) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "oneocr selected but models not downloaded, triggering download" }
+            modelDownloader.triggerOneOcrDownload()
+            return emptyList()
+        }
+        if (!oneOcrBridge.isAvailable) return emptyList()
+        if (!oneOcrBridge.isInitialized) {
+            oneOcrBridge.init()
+        }
+        if (!oneOcrBridge.isInitialized) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "oneocr engine failed to initialize" }
+            return emptyList()
+        }
+        val result = processImageWithChunks(bytes, language) { chunk ->
+            val chunkBytes = withContext(Dispatchers.Default) {
+                chunk.bitmap.toJpegBytes(85)
+            }
+            val lines = oneOcrBridge.recognize(chunkBytes, language)
+            chunk.bitmap.recycle()
+            lines
+        }
+        if (result.isEmpty()) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "oneocr engine returned no results" }
+            return emptyList()
+        }
+        return result
+    }
+
     val lensClient = Injekt.get<LensClient>()
     val debugResult = lensClient.getDebugOcrData(bytes = bytes, language = language)
     return debugResult.mergedResults
@@ -239,6 +272,37 @@ suspend fun recognizePage(
         }
         if (result.isEmpty()) {
             logcat("OcrEngineSelector", LogPriority.WARN) { "meiki engine returned no results" }
+            return emptyList()
+        }
+        return result
+    }
+
+    if (resolvedEngineType == OcrEngineType.ONEOCR) {
+        val oneOcrBridge = Injekt.get<OneOcrBridge>()
+        val modelDownloader = Injekt.get<ModelDownloader>()
+        if (!modelDownloader.isOneOcrDownloaded) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "oneocr selected but models not downloaded, triggering download" }
+            modelDownloader.triggerOneOcrDownload()
+            return emptyList()
+        }
+        if (!oneOcrBridge.isAvailable) return emptyList()
+        if (!oneOcrBridge.isInitialized) {
+            oneOcrBridge.init()
+        }
+        if (!oneOcrBridge.isInitialized) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "oneocr engine failed to initialize" }
+            return emptyList()
+        }
+        val result = processImageWithChunks(bitmap, language) { chunk ->
+            val chunkBytes = withContext(Dispatchers.Default) {
+                chunk.bitmap.toJpegBytes(85)
+            }
+            val lines = oneOcrBridge.recognize(chunkBytes, language)
+            if (chunk.bitmap !== bitmap) chunk.bitmap.recycle()
+            lines
+        }
+        if (result.isEmpty()) {
+            logcat("OcrEngineSelector", LogPriority.WARN) { "oneocr engine returned no results" }
             return emptyList()
         }
         return result

@@ -44,6 +44,8 @@ class ModelDownloader(
         private const val PADDLE_DIR = "paddle_ocr"
         private const val MEIKI_ZIP = "meiki-ocr.zip"
         private const val MEIKI_DIR = "meiki_ocr"
+        private const val ONEOCR_ZIP = "1ocr.zip"
+        private const val ONEOCR_DIR = "one_ocr"
         private const val LENS_DIR = "screenai_models"
     }
 
@@ -118,6 +120,11 @@ class ModelDownloader(
             requiredMeikiFiles().all { file -> file.isFile && file.length() > 0L }
         } ?: false
 
+    val isOneOcrDownloaded: Boolean
+        get() = supportedAbi()?.let {
+            requiredOneOcrFiles().all { file -> file.isFile && file.length() > 0L }
+        } ?: false
+
     /** Removes the on-device OCR models and forgets the recorded version. */
     fun deleteLensModels(): Boolean = deleteDir(File(context.filesDir, LENS_DIR)) {
         installedLensVersion.delete()
@@ -130,6 +137,9 @@ class ModelDownloader(
 
     /** Removes the Meiki OCR models. No per-model version pref to clear. */
     fun deleteMeikiModels(): Boolean = deleteDir(File(context.filesDir, MEIKI_DIR)) {}
+
+    /** Removes the OneOCR models. No per-model version pref to clear. */
+    fun deleteOneOcrModels(): Boolean = deleteDir(File(context.filesDir, ONEOCR_DIR)) {}
 
     private fun deleteDir(dir: File, onDeleted: () -> Unit): Boolean = synchronized(ModelBundleInstaller) {
         val previous = File(dir.parentFile, ".${dir.name}.previous")
@@ -203,6 +213,29 @@ class ModelDownloader(
         )
     }
 
+    private fun requiredOneOcrFiles(): List<File> {
+        val root = File(context.filesDir, ONEOCR_DIR)
+        return listOf(
+            File(root, "detector/text_detector.onnx"),
+            File(root, "recognizers/recognizer_cjk.onnx"),
+            File(root, "recognizers/recognizer_latin.onnx"),
+            File(root, "recognizers/recognizer_cyrillic.onnx"),
+            File(root, "recognizers/recognizer_arabic.onnx"),
+            File(root, "recognizers/recognizer_devanagari.onnx"),
+            File(root, "recognizers/recognizer_hebrew.onnx"),
+            File(root, "recognizers/recognizer_thai.onnx"),
+            File(root, "recognizers/recognizer_greek.onnx"),
+            File(root, "vocab/vocab_cjk.txt"),
+            File(root, "vocab/vocab_latin.txt"),
+            File(root, "vocab/vocab_cyrillic.txt"),
+            File(root, "vocab/vocab_arabic.txt"),
+            File(root, "vocab/vocab_devanagari.txt"),
+            File(root, "vocab/vocab_hebrew.txt"),
+            File(root, "vocab/vocab_thai.txt"),
+            File(root, "vocab/vocab_greek.txt"),
+        )
+    }
+
     /**
      * [force] re-downloads over an existing install, which is what an update
      * needs; without it the guard keeps an up-to-date set from being refetched.
@@ -238,6 +271,16 @@ class ModelDownloader(
                 progressText = "Downloading Meiki OCR models...",
                 successText = "Meiki OCR models downloaded successfully",
             ) { downloadZip(MEIKI_ZIP) }
+        }
+    }
+
+    fun triggerOneOcrDownload() {
+        if (isOneOcrDownloaded) return
+        scope.launch {
+            downloadWithNotifications(
+                progressText = "Downloading OneOCR models...",
+                successText = "OneOCR models downloaded successfully",
+            ) { downloadZip(ONEOCR_ZIP) }
         }
     }
 
@@ -314,6 +357,8 @@ class ModelDownloader(
 
     suspend fun downloadMeikiAndExtract(): Result<Unit> = downloadZip(MEIKI_ZIP)
 
+    suspend fun downloadOneOcrAndExtract(): Result<Unit> = downloadZip(ONEOCR_ZIP)
+
     private suspend fun downloadZip(zipName: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             // Meiki is a fork addition; its models ship in the fork's pinned release floor.
@@ -322,6 +367,7 @@ class ModelDownloader(
                 LENS_ZIP -> LENS_DIR
                 PADDLE_ZIP -> PADDLE_DIR
                 MEIKI_ZIP -> MEIKI_DIR
+                ONEOCR_ZIP -> ONEOCR_DIR
                 else -> error("Unknown OCR model zip: $zipName")
             }
             val url = "$RELEASE_URL$version/$zipName"
@@ -349,6 +395,7 @@ class ModelDownloader(
                     Injekt.get<PaddleOcrBridge>().invalidateModels()
                 }
                 MEIKI_ZIP -> Unit // Meiki bridge re-initialises lazily; no explicit invalidate.
+                ONEOCR_ZIP -> Injekt.get<OneOcrBridge>().destroy()
                 else -> error("Unknown OCR model zip: $zipName")
             }
 
@@ -380,6 +427,7 @@ class ModelDownloader(
             LENS_DIR -> requiredLensFiles(abi)
             PADDLE_DIR -> requiredPaddleFiles(abi)
             MEIKI_DIR -> requiredMeikiFiles()
+            ONEOCR_DIR -> requiredOneOcrFiles()
             else -> error("Unknown OCR model bundle: $bundle")
         }
         ModelBundleInstaller.install(input, context.filesDir, bundle, required.map { it.relativeTo(bundleRoot).path })

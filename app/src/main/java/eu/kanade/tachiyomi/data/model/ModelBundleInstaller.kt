@@ -20,7 +20,7 @@ internal object ModelBundleInstaller {
 
     @Synchronized
     fun install(input: InputStream, filesDir: File, bundle: String, required: List<String>) {
-        require(bundle == "screenai_models" || bundle == "paddle_ocr" || bundle == "meiki_ocr")
+        require(bundle == "screenai_models" || bundle == "paddle_ocr" || bundle == "meiki_ocr" || bundle == "one_ocr")
         filesDir.mkdirs()
         recover(filesDir, bundle)
         val staging = File.createTempFile(".$bundle-", ".staging", filesDir)
@@ -53,7 +53,7 @@ internal object ModelBundleInstaller {
 
     @Synchronized
     fun replace(candidate: File, filesDir: File, bundle: String, required: List<String>) {
-        require(bundle in setOf("screenai_models", "paddle_ocr", "panel_detector", "meiki_ocr"))
+        require(bundle in setOf("screenai_models", "paddle_ocr", "panel_detector", "meiki_ocr", "one_ocr"))
         check(required.all { File(candidate, it).let { file -> file.isFile && file.length() > 0L } }) {
             "The model archive is incomplete"
         }
