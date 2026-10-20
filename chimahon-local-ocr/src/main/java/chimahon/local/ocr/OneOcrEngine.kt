@@ -306,12 +306,15 @@ class OneOcrEngine(private val context: Context) : OcrEngine {
                 OnnxTensor.createTensor(e, IntBuffer.wrap(seqLen),
                     longArrayOf(1)).use { lenT ->
                     rec.run(mapOf("data" to dataT, "seq_lengths" to lenT)).use { r ->
+                        // Model output shape is [T, 1, C] (timesteps-first).
+                        // Iterate every timestep; logits[t][0] is the C-length
+                        // score row for that step.
                         val logits = (r.get(0) as OnnxTensor).value as Array<Array<FloatArray>>
-                        val seq = logits[0]
                         val blank = vocabSize - 1
                         val sb = StringBuilder()
                         var prev = -1
-                        for (row in seq) {
+                        for (t in logits.indices) {
+                            val row = logits[t][0]
                             var best = 0
                             var bestV = row[0]
                             for (k in 1 until row.size) if (row[k] > bestV) { bestV = row[k]; best = k }
