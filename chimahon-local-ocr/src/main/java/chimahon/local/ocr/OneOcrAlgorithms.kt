@@ -5,9 +5,9 @@ import java.io.File
 data class LineBox(val x: Float, val y: Float, val w: Float, val h: Float)
 
 /**
- * Pure-Kotlin helpers ported from pasitgut/one-ocr:
- *   detector.get_segmented_lines  -> segmentLines
- *   Vocabulary.load_clean         -> loadVocab
+ * Pure-Kotlin helpers ported from bropines/oneocr-onnx-python
+ * (detector.get_segmented_lines, Vocabulary.load_clean).
+ *
  * No Android or ONNX imports so it is JVM-testable.
  */
 object OneOcrAlgorithms {
@@ -89,8 +89,17 @@ object OneOcrAlgorithms {
         return out
     }
 
+    /**
+     * Parses "<idx>: <char>" vocab files.
+     *
+     * The extractor records which character each output class produces, so
+     * the file's index IS the model's class index. The remap skip-list used
+     * by bropines/vocab.py (skip [0,13,16,28,33] and renumber) silently shifts
+     * every character after the first skip — that is why Latin output looked
+     * like random letters. Raw indices are correct.
+     */
     fun loadVocab(path: File): Map<Int, String> {
-        val raw = mutableListOf<Pair<Int, String>>()
+        val out = mutableMapOf<Int, String>()
         for (line in path.readLines()) {
             if (line.isBlank()) continue
             val ci = line.indexOf(':')
@@ -98,18 +107,7 @@ object OneOcrAlgorithms {
             val idx = line.substring(0, ci).trim().toIntOrNull() ?: continue
             var ch = line.substring(ci + 1)
             if (ch.startsWith(" ")) ch = ch.substring(1)
-            raw.add(idx to ch)
-        }
-        raw.sortBy { it.first }
-        if (raw.size > 1000) return raw.toMap()
-
-        val skip = setOf(0, 13, 16, 28, 33)
-        val out = mutableMapOf<Int, String>()
-        var cleanIdx = 1
-        for ((idx, ch) in raw) {
-            if (idx in skip) continue
-            out[cleanIdx] = ch
-            cleanIdx++
+            out[idx] = ch
         }
         return out
     }

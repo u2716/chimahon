@@ -217,6 +217,7 @@ class ModelDownloader(
         val root = File(context.filesDir, ONEOCR_DIR)
         return listOf(
             File(root, "detector/text_detector.onnx"),
+            File(root, "classifier/script_classifier.onnx"),
             File(root, "recognizers/recognizer_cjk.onnx"),
             File(root, "recognizers/recognizer_latin.onnx"),
             File(root, "recognizers/recognizer_cyrillic.onnx"),
