@@ -193,8 +193,6 @@ class OneOcrEngine(private val context: Context) : OcrEngine {
                 SCORE_THRESHOLD, LINK_THRESHOLD).sortedBy { it.y }
         }
 
-        val fallbackSpec = specForLanguage(language)
-
         val out = ArrayList<EngineLine>(lines.size)
         for (line in lines) {
             val pad = 2
@@ -212,15 +210,9 @@ class OneOcrEngine(private val context: Context) : OcrEngine {
                 crop = Bitmap.createBitmap(crop, 0, 0, crop.width, crop.height, m, true)
             }
 
-            // Per-crop classification: pick recognizer from the crop's script.
-            // Falls back to the profile language if classifier is missing or
-            // says an unsupported script (bengali).
-            val classified = classifyCrop(crop)
-            val spec = classified?.let { specForScript(it.name) } ?: fallbackSpec ?: continue
-
+            val spec = specForLanguage(language) ?: continue
             val rec = ensureRecSession(spec.rec) ?: continue
             val vocab = ensureVocab(spec.vocab) ?: continue
-
             val text = runRecognizer(rec, crop, vocab, spec.vocabSize)
             if (text.isBlank()) continue
 
@@ -286,59 +278,6 @@ class OneOcrEngine(private val context: Context) : OcrEngine {
     // ------------------------------------------------------------------------
     // Classifier
     // ------------------------------------------------------------------------
-
-    @Suppress("UNCHECKED_CAST")
-    private fun classifyCrop(crop: Bitmap): ScriptInfo? {
-        val clf = ensureClassifierSession() ?: return null
-        val e = env ?: return null
-        val resized = crop.resizeBicubic(200, 60)
-        val pixels = IntArray(200 * 60)
-        resized.getPixels(pixels, 0, 200, 0, 0, 200, 60)
-        val plane = 200 * 60
-        val chw = FloatArray(3 * plane)
-        for (i in 0 until plane) {
-            val p = pixels[i]
-            // Classifier: BGR, [0..1].
-            chw[i]             = (p           and 0xFF) / 255f
-            chw[plane + i]     = ((p ushr 8)  and 0xFF) / 255f
-            chw[2 * plane + i] = ((p ushr 16) and 0xFF) / 255f
-        }
-        return try {
-            OnnxTensor.createTensor(e, FloatBuffer.wrap(chw),
-                longArrayOf(1, 3, 60, 200)).use { dataT ->
-                clf.run(mapOf("data" to dataT)).use { r ->
-                    // output[3] is script_id_score [1, 1, 10].
-                    val scores = (r.get(3) as OnnxTensor).value as Array<Array<FloatArray>>
-                    val row = scores[0][0]
-                    var best = 0
-                    var bestV = row[0]
-                    for (k in 1 until row.size) if (row[k] > bestV) { bestV = row[k]; best = k }
-                    // Python: SCRIPT_METADATA.get(id + 1, SCRIPT_METADATA[3])
-                    SCRIPT_METADATA[best + 1] ?: SCRIPT_METADATA[3]
-                }
-            }
-        } catch (t: Throwable) { null }
-    }
-
-    private fun ensureClassifierSession(): OrtSession? {
-        classifier?.let { return it }
-        synchronized(lock) {
-            classifier?.let { return it }
-            val f = File(baseDir(), "classifier/script_classifier.onnx")
-            if (!f.exists()) return null
-            val e = env ?: return null
-            return try {
-                val opts = OrtSession.SessionOptions().apply {
-                    setIntraOpNumThreads(1)
-                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                }
-                val s = e.createSession(f.absolutePath, opts)
-                opts.close()
-                classifier = s
-                s
-            } catch (t: Throwable) { null }
-        }
-    }
 
     // ------------------------------------------------------------------------
     // Recognizer
