@@ -405,24 +405,25 @@ class OneOcrEngine(private val context: Context) : OcrEngine {
                 OnnxTensor.createTensor(e, IntBuffer.wrap(seqLen),
                     longArrayOf(1)).use { lenT ->
                     rec.run(mapOf("data" to dataT, "seq_lengths" to lenT)).use { r ->
-                        // Output [T, 1, C] (timesteps-first). Iterate all T.
+                        // Recognizer output shape differs by ONNX export:
+                        //   [T, 1, C]  (timesteps-first)  OR
+                        //   [1, T, C]  (batch-first)  <- bropines uses this
+                        // Detect at runtime and iterate the timestep axis.
                         val logits = (r.get(0) as OnnxTensor).value as Array<Array<FloatArray>>
+                        val batchFirst = logits.size == 1
+                        val tDim = if (batchFirst) logits[0].size else logits.size
                         val blank = vocabSize - 1
                         val sb = StringBuilder()
                         var prev = -1
-                        for (t in logits.indices) {
-                            val row = logits[t][0]
+                        for (t in 0 until tDim) {
+                            val row = if (batchFirst) logits[0][t] else logits[t][0]
                             var best = 0
                             var bestV = row[0]
                             for (k in 1 until row.size) if (row[k] > bestV) { bestV = row[k]; best = k }
                             if (best != prev && best != blank) {
                                 val ch = vocab[best] ?: ""
                                 when {
-                                    // Class 0 is the space token.
                                     best == 0 -> sb.append(' ')
-                                    // Small-script vocab files carry empty
-                                    // classes that mark word boundaries —
-                                    // matches Python's word-split behaviour.
                                     ch.isEmpty() -> if (vocabSize <= 1000) sb.append(' ')
                                     else -> sb.append(ch)
                                 }
